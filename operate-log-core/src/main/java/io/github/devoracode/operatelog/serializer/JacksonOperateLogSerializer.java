@@ -14,9 +14,7 @@ import lombok.RequiredArgsConstructor;
  */
 @RequiredArgsConstructor
 public class JacksonOperateLogSerializer implements OperateLogSerializer {
-
     private static final String UNSERIALIZABLE = "<UNSERIALIZABLE>";
-
     private final ObjectMapper objectMapper;
 
     @Override
@@ -24,7 +22,6 @@ public class JacksonOperateLogSerializer implements OperateLogSerializer {
         if (value == null) {
             return null;
         }
-
         String serialized = writeQuietly(value);
         return serialized == null ? UNSERIALIZABLE : serialized;
     }
@@ -38,12 +35,10 @@ public class JacksonOperateLogSerializer implements OperateLogSerializer {
         if (arguments == null || arguments.length == 0) {
             return serialize(arguments);
         }
-
         String whole = writeQuietly(arguments);
         if (whole != null) {
             return whole;
         }
-
         StringBuilder json = new StringBuilder(arguments.length * 32);
         json.append('[');
         for (int i = 0; i < arguments.length; i++) {
@@ -56,8 +51,7 @@ public class JacksonOperateLogSerializer implements OperateLogSerializer {
                 json.append("\"<UNSERIALIZABLE:")
                         .append(arguments[i].getClass().getSimpleName())
                         .append(">\"");
-            }
-            else {
+            } else {
                 json.append(element);
             }
         }
@@ -75,8 +69,7 @@ public class JacksonOperateLogSerializer implements OperateLogSerializer {
     private String writeQuietly(Object value) {
         try {
             return this.objectMapper.writeValueAsString(value);
-        }
-        catch (Exception | StackOverflowError ex) {
+        } catch (Exception | StackOverflowError ex) {
             return null;
         }
     }

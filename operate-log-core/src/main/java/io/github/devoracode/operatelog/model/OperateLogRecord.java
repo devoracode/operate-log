@@ -18,67 +18,36 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class OperateLogRecord {
-
     private String id;
-
     private String traceId;
-
     private String application;
-
     private String environment;
-
     private String version;
-
     private String module;
-
     private String operation;
-
     private OperateType operationType;
-
     private String description;
-
     private String businessId;
-
     private String operatorUserId;
-
     private String operatorUserAccount;
-
     private String operatorUserName;
-
     private String requestMethod;
-
     private String requestUrl;
-
     private String requestUri;
-
     private String requestQuery;
-
     private String requestHeaders;
-
     private String requestBody;
-
     private String responseBody;
-
     private Integer httpStatus;
-
     private String clientIp;
-
     private String userAgent;
-
     private boolean success;
-
     private long costTime;
-
     private Instant startTime;
-
     private Instant endTime;
-
     private String errorType;
-
     private String errorMessage;
-
     private String errorStack;
-
     /**
      * 业务自定义字段。在业务方法内经
      * {@link io.github.devoracode.operatelog.context.OperateLogContextHolder#putExtra(String, Object)}

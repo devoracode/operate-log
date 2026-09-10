@@ -9,17 +9,14 @@ package io.github.devoracode.operatelog.model;
  * @author devoracode
  */
 public enum RecordOn {
-
     /**
      * 无论成功失败都记录（默认）。
      */
     ALWAYS,
-
     /**
      * 仅方法正常返回时记录（如：登录成功才记，失败不刷日志）。
      */
     SUCCESS,
-
     /**
      * 仅方法抛出异常时记录（如：退款排障场景只关心失败）。
      */

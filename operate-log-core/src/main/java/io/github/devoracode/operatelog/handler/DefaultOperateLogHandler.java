@@ -14,10 +14,7 @@ import org.slf4j.LoggerFactory;
  */
 @RequiredArgsConstructor
 public class DefaultOperateLogHandler implements OperateLogHandler {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(
-            DefaultOperateLogHandler.class);
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultOperateLogHandler.class);
     private final ObjectMapper objectMapper;
 
     @Override
@@ -25,8 +22,7 @@ public class DefaultOperateLogHandler implements OperateLogHandler {
         try {
             String json = this.objectMapper.writeValueAsString(record);
             LOGGER.info("operate-log={}", json);
-        }
-        catch (JsonProcessingException ex) {
+        } catch (JsonProcessingException ex) {
             LOGGER.warn("Failed to serialize operation log.", ex);
         }
     }

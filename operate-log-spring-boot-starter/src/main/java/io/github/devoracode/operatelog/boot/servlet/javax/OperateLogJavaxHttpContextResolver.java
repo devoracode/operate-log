@@ -37,20 +37,16 @@ import java.util.Map;
  * @author devoracode
  */
 public class OperateLogJavaxHttpContextResolver implements HttpContextResolver {
-
     /**
      * 客户端 IP 解析器（由自动配置注入，可能是本栈实现）。
      */
     private final ClientIpResolver clientIpResolver;
-
     /**
      * 是否采集完整请求头。
      */
     private final boolean captureHeaders;
 
-    public OperateLogJavaxHttpContextResolver(
-            ClientIpResolver clientIpResolver,
-            boolean captureHeaders) {
+    public OperateLogJavaxHttpContextResolver(ClientIpResolver clientIpResolver, boolean captureHeaders) {
         this.clientIpResolver = clientIpResolver;
         this.captureHeaders = captureHeaders;
     }
@@ -61,32 +57,17 @@ public class OperateLogJavaxHttpContextResolver implements HttpContextResolver {
         if (attributes == null) {
             return null;
         }
-
         // 通过二进制兼容通道获取宿主真实 request，再收窄到 javax 栈类型
-        Object requestObject = attributes.resolveReference(
-                RequestAttributes.REFERENCE_REQUEST);
+        Object requestObject = attributes.resolveReference(RequestAttributes.REFERENCE_REQUEST);
         if (!(requestObject instanceof HttpServletRequest)) {
             return null;
         }
-
         HttpServletRequest request = (HttpServletRequest) requestObject;
-
-        Map<String, String> headers = this.captureHeaders
-                ? resolveHeaders(request)
-                : null;
-
+        Map<String, String> headers = this.captureHeaders ? resolveHeaders(request) : null;
         Integer status = resolveStatus(attributes);
-
-        return HttpContext.builder()
-                .method(request.getMethod())
-                .url(request.getRequestURL().toString())
-                .uri(request.getRequestURI())
-                .query(request.getQueryString())
-                .ip(this.clientIpResolver.resolve())
-                .userAgent(request.getHeader("User-Agent"))
-                .status(status)
-                .headers(headers)
-                .build();
+        return HttpContext.builder().method(request.getMethod()).url(request.getRequestURL().toString()).uri(request.getRequestURI()).query(
+                request.getQueryString()).ip(this.clientIpResolver.resolve()).userAgent(request.getHeader("User-Agent")).status(
+                status).headers(headers).build();
     }
 
     /**
@@ -109,8 +90,7 @@ public class OperateLogJavaxHttpContextResolver implements HttpContextResolver {
             if (responseObject instanceof HttpServletResponse) {
                 return ((HttpServletResponse) responseObject).getStatus();
             }
-        }
-        catch (ReflectiveOperationException ex) {
+        } catch (ReflectiveOperationException ex) {
             // 反射失败时优雅降级：状态码记为 null，其余字段照常采集
         }
         return null;
@@ -122,16 +102,13 @@ public class OperateLogJavaxHttpContextResolver implements HttpContextResolver {
     private Map<String, String> resolveHeaders(HttpServletRequest request) {
         Map<String, String> headers = new LinkedHashMap<String, String>();
         Enumeration<String> headerNames = request.getHeaderNames();
-
         if (headerNames == null) {
             return headers;
         }
-
         while (headerNames.hasMoreElements()) {
             String headerName = headerNames.nextElement();
             headers.put(headerName, request.getHeader(headerName));
         }
-
         return headers;
     }
 }

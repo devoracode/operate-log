@@ -22,35 +22,20 @@ import java.util.Map;
 @Setter
 @RequiredArgsConstructor
 public class OperateLogContext {
-
     private final OperateLog annotation;
-
     private final ProceedingJoinPoint joinPoint;
-
     private final Method method;
-
     private final Object target;
-
     private final Object[] arguments;
-
     private Object result;
-
     private Throwable error;
-
     private HttpContext http;
-
     private Operator operator;
-
     private String traceId;
-
     private boolean success;
-
     private long costTime;
-
     private Instant startTime;
-
     private Instant endTime;
-
     /**
      * 业务自定义字段。在业务方法内经 {@link OperateLogContextHolder#putExtra(String, Object)}
      * 写入，随日志记录（{@code OperateLogRecord#extra}）一起落地。

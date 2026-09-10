@@ -32,17 +32,14 @@ import javax.servlet.http.HttpServletRequest;
  * @author devoracode
  */
 public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
-
     /**
      * 反向代理透传的客户端 IP 列表请求头。
      */
     private static final String FORWARDED_FOR = "X-Forwarded-For";
-
     /**
      * 反向代理透传的真实客户端 IP 请求头。
      */
     private static final String REAL_IP = "X-Real-IP";
-
     /**
      * 是否信任反向代理头（仅可信网络环境下开启，防止客户端伪造 IP）。
      */
@@ -58,20 +55,17 @@ public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
         if (request == null) {
             return null;
         }
-
         // 信任代理时优先取代理透传头：X-Forwarded-For 可能是逗号分隔的 IP 链，取第一个（最原始客户端）
         if (this.trustProxy) {
             String forwardedFor = request.getHeader(FORWARDED_FOR);
             if (StringUtils.isNotBlank(forwardedFor)) {
                 return StringUtils.substringBefore(forwardedFor, ",").trim();
             }
-
             String realIp = request.getHeader(REAL_IP);
             if (StringUtils.isNotBlank(realIp)) {
                 return realIp.trim();
             }
         }
-
         // 兜底：Servlet 容器给出的直连地址（该方法签名在 Servlet 4/5/6 中一致，二进制兼容）
         return request.getRemoteAddr();
     }
@@ -91,13 +85,10 @@ public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
         if (attributes == null) {
             return null;
         }
-
-        Object requestObject = attributes.resolveReference(
-                RequestAttributes.REFERENCE_REQUEST);
+        Object requestObject = attributes.resolveReference(RequestAttributes.REFERENCE_REQUEST);
         if (!(requestObject instanceof HttpServletRequest)) {
             return null;
         }
-
         return (HttpServletRequest) requestObject;
     }
 }

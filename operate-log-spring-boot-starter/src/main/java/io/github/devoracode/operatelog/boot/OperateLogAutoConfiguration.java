@@ -56,13 +56,8 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(OperateLogProperties.class)
-@ConditionalOnProperty(
-        prefix = "operate-log",
-        name = "enabled",
-        havingValue = "true",
-        matchIfMissing = true)
+@ConditionalOnProperty(prefix = "operate-log", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class OperateLogAutoConfiguration {
-
     /**
      * 默认操作人解析器：匿名（返回 {@code null}），业务方自定义 bean 后自动让位。
      */
@@ -71,7 +66,6 @@ public class OperateLogAutoConfiguration {
     public OperatorResolver operateLogOperatorResolver() {
         return new AnonymousOperatorResolver();
     }
-
     // ==================== jakarta 栈（Spring Boot 3.x，优先装配） ====================
 
     /**
@@ -84,10 +78,8 @@ public class OperateLogAutoConfiguration {
     @Bean
     @ConditionalOnClass(name = "jakarta.servlet.http.HttpServletRequest")
     @ConditionalOnMissingBean
-    public ClientIpResolver operateLogJakartaClientIpResolver(
-            OperateLogProperties properties) {
-        return new OperateLogJakartaClientIpResolver(
-                properties.getHttp().isTrustProxy());
+    public ClientIpResolver operateLogJakartaClientIpResolver(OperateLogProperties properties) {
+        return new OperateLogJakartaClientIpResolver(properties.getHttp().isTrustProxy());
     }
 
     /**
@@ -96,14 +88,10 @@ public class OperateLogAutoConfiguration {
     @Bean
     @ConditionalOnClass(name = "jakarta.servlet.http.HttpServletRequest")
     @ConditionalOnMissingBean
-    public HttpContextResolver operateLogJakartaHttpContextResolver(
-            ClientIpResolver clientIpResolver,
-            OperateLogProperties properties) {
-        return new OperateLogJakartaHttpContextResolver(
-                clientIpResolver,
-                properties.getHttp().isCaptureHeaders());
+    public HttpContextResolver operateLogJakartaHttpContextResolver(ClientIpResolver clientIpResolver,
+                                                                    OperateLogProperties properties) {
+        return new OperateLogJakartaHttpContextResolver(clientIpResolver, properties.getHttp().isCaptureHeaders());
     }
-
     // ==================== javax 栈（Spring Boot 2.x，jakarta 未命中时装配） ====================
 
     /**
@@ -112,10 +100,8 @@ public class OperateLogAutoConfiguration {
     @Bean
     @ConditionalOnClass(name = "javax.servlet.http.HttpServletRequest")
     @ConditionalOnMissingBean
-    public ClientIpResolver operateLogJavaxClientIpResolver(
-            OperateLogProperties properties) {
-        return new OperateLogJavaxClientIpResolver(
-                properties.getHttp().isTrustProxy());
+    public ClientIpResolver operateLogJavaxClientIpResolver(OperateLogProperties properties) {
+        return new OperateLogJavaxClientIpResolver(properties.getHttp().isTrustProxy());
     }
 
     /**
@@ -124,14 +110,10 @@ public class OperateLogAutoConfiguration {
     @Bean
     @ConditionalOnClass(name = "javax.servlet.http.HttpServletRequest")
     @ConditionalOnMissingBean
-    public HttpContextResolver operateLogJavaxHttpContextResolver(
-            ClientIpResolver clientIpResolver,
-            OperateLogProperties properties) {
-        return new OperateLogJavaxHttpContextResolver(
-                clientIpResolver,
-                properties.getHttp().isCaptureHeaders());
+    public HttpContextResolver operateLogJavaxHttpContextResolver(ClientIpResolver clientIpResolver,
+                                                                  OperateLogProperties properties) {
+        return new OperateLogJavaxHttpContextResolver(clientIpResolver, properties.getHttp().isCaptureHeaders());
     }
-
     // ==================== 非 Web 兜底（classpath 无任何 Servlet API） ====================
 
     /**
@@ -164,7 +146,6 @@ public class OperateLogAutoConfiguration {
             }
         };
     }
-
     // ==================== 通用组件（与栈无关） ====================
 
     /**
@@ -172,8 +153,7 @@ public class OperateLogAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    public OperateLogSerializer operateLogSerializer(
-            ObjectMapper objectMapper) {
+    public OperateLogSerializer operateLogSerializer(ObjectMapper objectMapper) {
         return new JacksonOperateLogSerializer(objectMapper);
     }
 
@@ -182,11 +162,9 @@ public class OperateLogAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    public SensitiveDataMasker operateLogSensitiveDataMasker(
-            ObjectMapper objectMapper,
-            OperateLogProperties properties) {
-        return new JacksonSensitiveDataMasker(
-                objectMapper,
+    public SensitiveDataMasker operateLogSensitiveDataMasker(ObjectMapper objectMapper,
+                                                             OperateLogProperties properties) {
+        return new JacksonSensitiveDataMasker(objectMapper,
                 properties.getMask().getFields(),
                 properties.getMask().getMaskText());
     }
@@ -201,9 +179,7 @@ public class OperateLogAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public SpelEngine operateLogSpelEngine(OperateLogProperties properties) {
-        return new DefaultSpelEngine(
-                properties.getSpel().getCacheSize(),
-                properties.getSpel().isEnabled());
+        return new DefaultSpelEngine(properties.getSpel().getCacheSize(), properties.getSpel().isEnabled());
     }
 
     /**
@@ -214,8 +190,7 @@ public class OperateLogAutoConfiguration {
     @ConditionalOnMissingBean
     public PayloadPolicy operateLogPayloadPolicy(OperateLogProperties properties) {
         OperateLogProperties.Payload payload = properties.getPayload();
-        return new PayloadPolicy(
-                payload.getMaxRequestLength(),
+        return new PayloadPolicy(payload.getMaxRequestLength(),
                 payload.getMaxResponseLength(),
                 payload.getMaxErrorStackLength(),
                 payload.getIgnoreTypes());
@@ -226,8 +201,7 @@ public class OperateLogAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    public OperateLogHandler operateLogHandler(
-            ObjectMapper objectMapper) {
+    public OperateLogHandler operateLogHandler(ObjectMapper objectMapper) {
         return new DefaultOperateLogHandler(objectMapper);
     }
 
@@ -236,17 +210,15 @@ public class OperateLogAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    public OperateLogAspect operateLogAspect(
-            OperateLogHandler handler,
-            OperatorResolver operatorResolver,
-            HttpContextResolver httpContextResolver,
-            OperateLogSerializer serializer,
-            SensitiveDataMasker sensitiveDataMasker,
-            SpelEngine spelEngine,
-            PayloadPolicy payloadPolicy,
-            OperateLogProperties properties) {
-        return new OperateLogAspect(
-                handler,
+    public OperateLogAspect operateLogAspect(OperateLogHandler handler,
+                                             OperatorResolver operatorResolver,
+                                             HttpContextResolver httpContextResolver,
+                                             OperateLogSerializer serializer,
+                                             SensitiveDataMasker sensitiveDataMasker,
+                                             SpelEngine spelEngine,
+                                             PayloadPolicy payloadPolicy,
+                                             OperateLogProperties properties) {
+        return new OperateLogAspect(handler,
                 operatorResolver,
                 httpContextResolver,
                 serializer,

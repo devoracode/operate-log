@@ -8,7 +8,6 @@ import io.github.devoracode.operatelog.context.OperateLogContext;
  * @author devoracode
  */
 public interface SpelEngine {
-
     Object evaluate(String expression, OperateLogContext context);
 
     String evaluateTemplate(String template, OperateLogContext context);

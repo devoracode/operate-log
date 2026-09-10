@@ -28,7 +28,6 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface OperateLog {
-
     /**
      * 模块名（如 {@code user} / {@code order}），支持类级默认值。
      */

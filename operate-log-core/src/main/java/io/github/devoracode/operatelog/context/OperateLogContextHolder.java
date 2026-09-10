@@ -30,9 +30,7 @@ import java.util.Map;
  * @author devoracode
  */
 public final class OperateLogContextHolder {
-
-    private static final ThreadLocal<OperateLogContext> HOLDER =
-            new ThreadLocal<OperateLogContext>();
+    private static final ThreadLocal<OperateLogContext> HOLDER = new ThreadLocal<OperateLogContext>();
 
     private OperateLogContextHolder() {
     }

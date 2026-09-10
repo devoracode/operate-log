@@ -24,22 +24,16 @@ import java.util.Set;
  * @author devoracode
  */
 public class PayloadPolicy {
-
     private static final String TRUNCATED_SUFFIX = "...[truncated]";
-
     private final int maxRequestLength;
-
     private final int maxResponseLength;
-
     private final int maxErrorStackLength;
-
     private final Set<String> ignoredTypes;
 
-    public PayloadPolicy(
-            int maxRequestLength,
-            int maxResponseLength,
-            int maxErrorStackLength,
-            Collection<String> ignoredTypes) {
+    public PayloadPolicy(int maxRequestLength,
+                         int maxResponseLength,
+                         int maxErrorStackLength,
+                         Collection<String> ignoredTypes) {
         this.maxRequestLength = maxRequestLength;
         this.maxResponseLength = maxResponseLength;
         this.maxErrorStackLength = maxErrorStackLength;
@@ -58,7 +52,6 @@ public class PayloadPolicy {
         if (arguments == null || arguments.length == 0 || this.ignoredTypes.isEmpty()) {
             return arguments;
         }
-
         Object[] filtered = arguments;
         for (int i = 0; i < arguments.length; i++) {
             Object argument = arguments[i];
@@ -126,7 +119,6 @@ public class PayloadPolicy {
         if (types == null || types.isEmpty()) {
             return Collections.emptySet();
         }
-
         Set<String> normalized = new HashSet<String>();
         for (String type : types) {
             if (StringUtils.isNotBlank(type)) {

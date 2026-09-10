@@ -64,67 +64,46 @@ import java.util.UUID;
 @Aspect
 @RequiredArgsConstructor
 public class OperateLogAspect {
-
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
-
     /**
      * traceId 的默认 MDC key（可被 {@code operate-log.trace-id-mdc-key} 覆盖）。
      */
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
-
     private final OperateLogHandler handler;
-
     private final OperatorResolver operatorResolver;
-
     private final HttpContextResolver httpContextResolver;
-
     private final OperateLogSerializer serializer;
-
     private final SensitiveDataMasker sensitiveDataMasker;
-
     private final SpelEngine spelEngine;
-
     private final String application;
-
     private final String environment;
-
     private final String version;
-
     private final boolean maskEnabled;
-
     private final PayloadPolicy payloadPolicy;
-
     private final String traceIdMdcKey;
 
-    @Around("@annotation(io.github.devoracode.operatelog.annotation.OperateLog)"
-            + " || @within(io.github.devoracode.operatelog.annotation.OperateLog)")
+    @Around("@annotation(io.github.devoracode.operatelog.annotation.OperateLog)" + " || @within(io.github.devoracode.operatelog.annotation.OperateLog)")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
         Method invocationMethod = ((MethodSignature) joinPoint.getSignature()).getMethod();
-        Class<?> targetClass = joinPoint.getTarget() == null
-                ? invocationMethod.getDeclaringClass()
-                : joinPoint.getTarget().getClass();
-
+        Class<?> targetClass = joinPoint.getTarget() == null ? invocationMethod.getDeclaringClass() : joinPoint.getTarget()
+                                                                                                      .getClass();
         final Method targetMethod;
         final OperateLog annotation;
         try {
             targetMethod = AopUtils.getMostSpecificMethod(invocationMethod, targetClass);
             annotation = resolveOperateLog(invocationMethod, targetMethod, targetClass);
-        }
-        catch (Throwable ex) {
+        } catch (Throwable ex) {
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("operate-log: annotation lookup failed, logging skipped.", ex);
             }
             return joinPoint.proceed();
         }
-
         if (annotation == null) {
             return joinPoint.proceed();
         }
-
         final OperateLogContext context;
         try {
-            context = new OperateLogContext(
-                    annotation,
+            context = new OperateLogContext(annotation,
                     joinPoint,
                     targetMethod,
                     joinPoint.getTarget(),
@@ -133,14 +112,12 @@ public class OperateLogAspect {
             context.setTraceId(resolveTraceId());
             context.setOperator(resolveOperator());
             context.setHttp(resolveHttpContext());
-        }
-        catch (Throwable ex) {
+        } catch (Throwable ex) {
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("operate-log: context initialization failed, logging skipped.", ex);
             }
             return joinPoint.proceed();
         }
-
         // 绑定线程上下文：业务方法内可通过 OperateLogContextHolder#putExtra 追加自定义字段
         OperateLogContext previous = OperateLogContextHolder.current();
         OperateLogContextHolder.bind(context);
@@ -149,25 +126,21 @@ public class OperateLogAspect {
             context.setResult(result);
             context.setSuccess(true);
             return result;
-        }
-        catch (Throwable ex) {
+        } catch (Throwable ex) {
             context.setError(ex);
             context.setSuccess(false);
             throw ex;
-        }
-        finally {
+        } finally {
             try {
                 context.setEndTime(Instant.now());
-                context.setCostTime(Duration.between(
-                        context.getStartTime(), context.getEndTime()).toMillis());
+                context.setCostTime(Duration.between(context.getStartTime(), context.getEndTime())
+                        .toMillis());
                 handleSafely(context);
-            }
-            finally {
+            } finally {
                 // 嵌套标注方法场景：恢复外层上下文而非直接清空，防止 ThreadLocal 泄漏与外层丢数据
                 if (previous == null) {
                     OperateLogContextHolder.unbind();
-                }
-                else {
+                } else {
                     OperateLogContextHolder.bind(previous);
                 }
             }
@@ -179,15 +152,13 @@ public class OperateLogAspect {
      *
      * <p>仅类级注解在场时直接按类级配置记录；仅方法级在场时原样返回。</p>
      */
-    private OperateLog resolveOperateLog(
-            Method invocationMethod,
-            Method targetMethod,
-            Class<?> targetClass) {
+    private OperateLog resolveOperateLog(Method invocationMethod,
+                                         Method targetMethod,
+                                         Class<?> targetClass) {
         OperateLog methodLevel = findOperateLog(invocationMethod, targetMethod, targetClass);
-        OperateLog classLevel = targetClass == null
-                ? null
-                : AnnotationUtils.findAnnotation(targetClass, OperateLog.class);
-
+        OperateLog classLevel = targetClass == null ? null : AnnotationUtils.findAnnotation(
+                targetClass,
+                OperateLog.class);
         if (methodLevel == null) {
             return classLevel;
         }
@@ -206,7 +177,6 @@ public class OperateLogAspect {
             // 防御自定义实现返回 null：视为 ALWAYS，不丢日志
             return true;
         }
-
         switch (recordOn) {
             case SUCCESS:
                 return context.isSuccess();
@@ -220,26 +190,22 @@ public class OperateLogAspect {
     /**
      * 注解查找链：目标类 most-specific 方法 → 调用方法 → 目标类实现的接口。
      */
-    private OperateLog findOperateLog(
-            Method invocationMethod,
-            Method targetMethod,
-            Class<?> targetClass) {
+    private OperateLog findOperateLog(Method invocationMethod,
+                                      Method targetMethod,
+                                      Class<?> targetClass) {
         if (targetMethod != null) {
-            OperateLog annotation = AnnotationUtils.findAnnotation(
-                    targetMethod, OperateLog.class);
+            OperateLog annotation = AnnotationUtils.findAnnotation(targetMethod, OperateLog.class);
             if (annotation != null) {
                 return annotation;
             }
         }
-
         if (invocationMethod != null && invocationMethod != targetMethod) {
-            OperateLog annotation = AnnotationUtils.findAnnotation(
-                    invocationMethod, OperateLog.class);
+            OperateLog annotation = AnnotationUtils.findAnnotation(invocationMethod,
+                    OperateLog.class);
             if (annotation != null) {
                 return annotation;
             }
         }
-
         Method lookupMethod = targetMethod != null ? targetMethod : invocationMethod;
         return findInterfaceAnnotation(targetClass, lookupMethod);
     }
@@ -252,18 +218,16 @@ public class OperateLogAspect {
         if (targetClass == null || method == null) {
             return null;
         }
-
         for (Class<?> interfaceClass : ClassUtils.getAllInterfacesForClass(targetClass)) {
             try {
-                Method interfaceMethod = interfaceClass.getMethod(
-                        method.getName(), method.getParameterTypes());
-                OperateLog annotation = AnnotationUtils.findAnnotation(
-                        interfaceMethod, OperateLog.class);
+                Method interfaceMethod = interfaceClass.getMethod(method.getName(),
+                        method.getParameterTypes());
+                OperateLog annotation = AnnotationUtils.findAnnotation(interfaceMethod,
+                        OperateLog.class);
                 if (annotation != null) {
                     return annotation;
                 }
-            }
-            catch (NoSuchMethodException ignored) {
+            } catch (NoSuchMethodException ignored) {
                 // 该接口无同签名方法，继续查找下一个接口
             }
         }
@@ -271,8 +235,7 @@ public class OperateLogAspect {
     }
 
     private String resolveTraceId() {
-        String mdcKey = StringUtils.defaultIfBlank(
-                this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
+        String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
         String traceId = MDC.get(mdcKey);
         return StringUtils.defaultIfBlank(traceId, UUID.randomUUID().toString());
     }
@@ -280,8 +243,7 @@ public class OperateLogAspect {
     private Operator resolveOperator() {
         try {
             return this.operatorResolver.resolve();
-        }
-        catch (Throwable ex) {
+        } catch (Throwable ex) {
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("operate-log: operator resolution failed, degraded to null.", ex);
             }
@@ -292,8 +254,7 @@ public class OperateLogAspect {
     private HttpContext resolveHttpContext() {
         try {
             return this.httpContextResolver.resolve();
-        }
-        catch (Throwable ex) {
+        } catch (Throwable ex) {
             if (LOGGER.isDebugEnabled()) {
                 LOGGER.debug("operate-log: http context resolution failed, degraded to null.", ex);
             }
@@ -311,20 +272,17 @@ public class OperateLogAspect {
             if (!shouldRecord(context)) {
                 return;
             }
-
-            if (!this.spelEngine.evaluateBoolean(
-                    context.getAnnotation().condition(), context)) {
+            if (!this.spelEngine.evaluateBoolean(context.getAnnotation().condition(), context)) {
                 return;
             }
-
             OperateLogRecord record = buildRecord(context);
             this.handler.handle(record);
-        }
-        catch (Throwable ex) {
+        } catch (Throwable ex) {
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("operate-log: failed to build/handle log record for module=[{}], "
-                        + "operation=[{}].", context.getAnnotation().module(),
-                        context.getAnnotation().operation(), ex);
+                LOGGER.debug("operate-log: failed to build/handle log record for module=[{}], " + "operation=[{}].",
+                        context.getAnnotation().module(),
+                        context.getAnnotation().operation(),
+                        ex);
             }
         }
     }
@@ -334,33 +292,21 @@ public class OperateLogAspect {
         Operator operator = context.getOperator();
         HttpContext httpContext = context.getHttp();
         Throwable error = context.getError();
-
-        String requestHeaders = httpContext == null
-                ? null
-                : this.serializer.serialize(httpContext.getHeaders());
-        String requestBody = annotation.recordRequest()
-                ? this.serializer.serializeArguments(
-                        this.payloadPolicy.filterArguments(context.getArguments()))
-                : null;
-        String responseBody = annotation.recordResponse()
-                ? this.serializer.serialize(context.getResult())
-                : null;
-
+        String requestHeaders = httpContext == null ? null : this.serializer.serialize(httpContext.getHeaders());
+        String requestBody = annotation.recordRequest() ? this.serializer.serializeArguments(this.payloadPolicy.filterArguments(
+                context.getArguments())) : null;
+        String responseBody = annotation.recordResponse() ? this.serializer.serialize(context.getResult()) : null;
         if (this.maskEnabled) {
             requestHeaders = this.sensitiveDataMasker.mask(requestHeaders);
             requestBody = this.sensitiveDataMasker.mask(requestBody);
             responseBody = this.sensitiveDataMasker.mask(responseBody);
         }
-
         // 截断在脱敏之后执行：无论脱敏使内容变长还是变短，落地的最终体积都不越界
         requestHeaders = this.payloadPolicy.truncateRequest(requestHeaders);
         requestBody = this.payloadPolicy.truncateRequest(requestBody);
         responseBody = this.payloadPolicy.truncateResponse(responseBody);
-
-        Map<String, Object> extra = context.getExtra().isEmpty()
-                ? null
-                : new LinkedHashMap<String, Object>(context.getExtra());
-
+        Map<String, Object> extra = context.getExtra()
+                .isEmpty() ? null : new LinkedHashMap<String, Object>(context.getExtra());
         return OperateLogRecord.builder()
                 .id(UUID.randomUUID().toString())
                 .traceId(context.getTraceId())
@@ -370,8 +316,7 @@ public class OperateLogAspect {
                 .module(annotation.module())
                 .operation(annotation.operation())
                 .operationType(annotation.type())
-                .description(this.spelEngine.evaluateTemplate(
-                        annotation.description(), context))
+                .description(this.spelEngine.evaluateTemplate(annotation.description(), context))
                 .businessId(resolveBusinessId(annotation, context))
                 .operatorUserId(operator == null ? null : operator.getUserId())
                 .operatorUserAccount(operator == null ? null : operator.getUserAccount())
@@ -392,16 +337,13 @@ public class OperateLogAspect {
                 .endTime(context.getEndTime())
                 .errorType(error == null ? null : error.getClass().getName())
                 .errorMessage(error == null ? null : error.getMessage())
-                .errorStack(error == null
-                        ? null
-                        : this.payloadPolicy.truncateErrorStack(getStackTrace(error)))
+                .errorStack(error == null ? null : this.payloadPolicy.truncateErrorStack(
+                        getStackTrace(error)))
                 .extra(extra)
                 .build();
     }
 
-    private String resolveBusinessId(
-            OperateLog annotation,
-            OperateLogContext context) {
+    private String resolveBusinessId(OperateLog annotation, OperateLogContext context) {
         Object value = this.spelEngine.evaluate(annotation.businessId(), context);
         return value == null ? null : String.valueOf(value);
     }
@@ -425,37 +367,24 @@ public class OperateLogAspect {
      * 属性值与最终落地的日志一致。</p>
      */
     private static final class MergedOperateLog implements OperateLog {
-
         private final String module;
-
         private final String operation;
-
         private final OperateType type;
-
         private final String description;
-
         private final String businessId;
-
         private final String condition;
-
         private final RecordOn recordOn;
-
         private final boolean recordRequest;
-
         private final boolean recordResponse;
 
         private MergedOperateLog(OperateLog classLevel, OperateLog methodLevel) {
             this.module = pickText(methodLevel.module(), classLevel.module());
             this.operation = pickText(methodLevel.operation(), classLevel.operation());
-            this.type = methodLevel.type() == OperateType.OTHER
-                    ? classLevel.type()
-                    : methodLevel.type();
+            this.type = methodLevel.type() == OperateType.OTHER ? classLevel.type() : methodLevel.type();
             this.description = pickText(methodLevel.description(), classLevel.description());
             this.businessId = pickText(methodLevel.businessId(), classLevel.businessId());
             this.condition = pickText(methodLevel.condition(), classLevel.condition());
-            this.recordOn = methodLevel.recordOn() == RecordOn.ALWAYS
-                    ? classLevel.recordOn()
-                    : methodLevel.recordOn();
+            this.recordOn = methodLevel.recordOn() == RecordOn.ALWAYS ? classLevel.recordOn() : methodLevel.recordOn();
             this.recordRequest = methodLevel.recordRequest();
             this.recordResponse = methodLevel.recordResponse();
         }

@@ -38,20 +38,12 @@ import java.util.Map;
  * @author devoracode
  */
 public class DefaultSpelEngine implements SpelEngine {
-
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSpelEngine.class);
-
     private static final String TEMPLATE_PREFIX = "T:";
-
     private static final String EXPRESSION_PREFIX = "E:";
-
     private final ExpressionParser parser = new SpelExpressionParser();
-
-    private final DefaultParameterNameDiscoverer parameterNameDiscoverer =
-            new DefaultParameterNameDiscoverer();
-
+    private final DefaultParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
     private final Map<String, Expression> expressionCache;
-
     private final boolean enabled;
 
     public DefaultSpelEngine(int cacheSize) {
@@ -61,13 +53,14 @@ public class DefaultSpelEngine implements SpelEngine {
     public DefaultSpelEngine(int cacheSize, boolean enabled) {
         this.enabled = enabled;
         final int maxCacheSize = Math.max(cacheSize, 64);
-        this.expressionCache = Collections.synchronizedMap(
-                new LinkedHashMap<String, Expression>(16, 0.75f, true) {
-                    @Override
-                    protected boolean removeEldestEntry(Map.Entry<String, Expression> eldest) {
-                        return size() > maxCacheSize;
-                    }
-                });
+        this.expressionCache = Collections.synchronizedMap(new LinkedHashMap<String, Expression>(16,
+                0.75f,
+                true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, Expression> eldest) {
+                return size() > maxCacheSize;
+            }
+        });
     }
 
     @Override
@@ -78,12 +71,10 @@ public class DefaultSpelEngine implements SpelEngine {
         if (!this.enabled) {
             return null;
         }
-
         try {
             Expression spelExpression = getExpression(expression, false);
             return spelExpression.getValue(createEvaluationContext(context));
-        }
-        catch (Throwable ex) {
+        } catch (Throwable ex) {
             // businessId 允许为空：表达式失败降级为 null，不影响日志记录
             logDegraded("evaluate", expression, ex);
             return null;
@@ -99,13 +90,10 @@ public class DefaultSpelEngine implements SpelEngine {
             // SpEL 关闭：描述输出模板原文，业务不因此丢失语义
             return template;
         }
-
         try {
             Expression spelExpression = getExpression(template, true);
-            return spelExpression.getValue(
-                    createEvaluationContext(context), String.class);
-        }
-        catch (Throwable ex) {
+            return spelExpression.getValue(createEvaluationContext(context), String.class);
+        } catch (Throwable ex) {
             // 模板求值失败：输出原文优于整条日志丢失
             logDegraded("evaluateTemplate", template, ex);
             return template;
@@ -120,14 +108,12 @@ public class DefaultSpelEngine implements SpelEngine {
         if (!this.enabled) {
             return true;
         }
-
         try {
             Expression spelExpression = getExpression(expression, false);
-            Boolean result = spelExpression.getValue(
-                    createEvaluationContext(context), Boolean.class);
+            Boolean result = spelExpression.getValue(createEvaluationContext(context),
+                    Boolean.class);
             return Boolean.TRUE.equals(result);
-        }
-        catch (Throwable ex) {
+        } catch (Throwable ex) {
             // 条件求值失败：宁可多记不可漏记，视为通过（误过滤审计日志代价更高）
             logDegraded("evaluateBoolean", expression, ex);
             return true;
@@ -137,7 +123,9 @@ public class DefaultSpelEngine implements SpelEngine {
     private void logDegraded(String operation, String expression, Throwable ex) {
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("operate-log: SpEL '{}' failed for expression [{}], degraded.",
-                    operation, expression, ex);
+                    operation,
+                    expression,
+                    ex);
         }
     }
 
@@ -145,25 +133,18 @@ public class DefaultSpelEngine implements SpelEngine {
         String prefix = template ? TEMPLATE_PREFIX : EXPRESSION_PREFIX;
         String cacheKey = prefix + value;
         Expression cached = this.expressionCache.get(cacheKey);
-
         if (cached != null) {
             return cached;
         }
-
-        Expression parsedExpression = template
-                ? this.parser.parseExpression(value, new TemplateParserContext())
-                : this.parser.parseExpression(value);
-
+        Expression parsedExpression = template ? this.parser.parseExpression(value,
+                new TemplateParserContext()) : this.parser.parseExpression(value);
         // LRU 自动淘汰最久未使用项，无需容量判断；并发重复 put 幂等无害
         this.expressionCache.put(cacheKey, parsedExpression);
         return parsedExpression;
     }
 
-    private StandardEvaluationContext createEvaluationContext(
-            OperateLogContext context) {
-        StandardEvaluationContext evaluationContext =
-                new StandardEvaluationContext();
-
+    private StandardEvaluationContext createEvaluationContext(OperateLogContext context) {
+        StandardEvaluationContext evaluationContext = new StandardEvaluationContext();
         evaluationContext.setVariable("context", context);
         evaluationContext.setVariable("annotation", context.getAnnotation());
         evaluationContext.setVariable("result", context.getResult());
@@ -175,28 +156,22 @@ public class DefaultSpelEngine implements SpelEngine {
         evaluationContext.setVariable("costTime", context.getCostTime());
         evaluationContext.setVariable("startTime", context.getStartTime());
         evaluationContext.setVariable("endTime", context.getEndTime());
-
         Object[] arguments = context.getArguments();
         for (int i = 0; i < arguments.length; i++) {
             evaluationContext.setVariable("p" + i, arguments[i]);
             evaluationContext.setVariable("a" + i, arguments[i]);
         }
-
         Method method = context.getMethod();
         String[] parameterNames = this.parameterNameDiscoverer.getParameterNames(method);
-
         if (parameterNames == null) {
             return evaluationContext;
         }
-
         for (int i = 0; i < parameterNames.length && i < arguments.length; i++) {
             String parameterName = parameterNames[i];
-
             if (StringUtils.isNotBlank(parameterName)) {
                 evaluationContext.setVariable(parameterName, arguments[i]);
             }
         }
-
         return evaluationContext;
     }
 }

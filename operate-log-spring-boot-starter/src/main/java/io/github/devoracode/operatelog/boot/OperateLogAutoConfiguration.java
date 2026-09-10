@@ -9,6 +9,7 @@ import io.github.devoracode.operatelog.boot.servlet.javax.OperateLogJavaxHttpCon
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import io.github.devoracode.operatelog.handler.OperateLogHandler;
 import io.github.devoracode.operatelog.model.HttpContext;
+import io.github.devoracode.operatelog.payload.PayloadPolicy;
 import io.github.devoracode.operatelog.resolver.AnonymousOperatorResolver;
 import io.github.devoracode.operatelog.resolver.ClientIpResolver;
 import io.github.devoracode.operatelog.resolver.HttpContextResolver;
@@ -192,11 +193,32 @@ public class OperateLogAutoConfiguration {
 
     /**
      * 默认 SpEL 引擎（带表达式解析缓存）。
+     *
+     * <p>{@code operate-log.spel.enabled=false} 时引擎整体降级为直通：
+     * condition 恒通过、description 输出模板原文、businessId 记 {@code null}，
+     * 不产生任何表达式求值开销。</p>
      */
     @Bean
     @ConditionalOnMissingBean
     public SpelEngine operateLogSpelEngine(OperateLogProperties properties) {
-        return new DefaultSpelEngine(properties.getSpel().getCacheSize());
+        return new DefaultSpelEngine(
+                properties.getSpel().getCacheSize(),
+                properties.getSpel().isEnabled());
+    }
+
+    /**
+     * 载荷防护策略：requestBody / responseBody / errorStack 等字段长度截断，
+     * 以及序列化时按类型忽略文件 / 流 / Servlet 容器等不适合入日志的参数。
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public PayloadPolicy operateLogPayloadPolicy(OperateLogProperties properties) {
+        OperateLogProperties.Payload payload = properties.getPayload();
+        return new PayloadPolicy(
+                payload.getMaxRequestLength(),
+                payload.getMaxResponseLength(),
+                payload.getMaxErrorStackLength(),
+                payload.getIgnoreTypes());
     }
 
     /**
@@ -221,6 +243,7 @@ public class OperateLogAutoConfiguration {
             OperateLogSerializer serializer,
             SensitiveDataMasker sensitiveDataMasker,
             SpelEngine spelEngine,
+            PayloadPolicy payloadPolicy,
             OperateLogProperties properties) {
         return new OperateLogAspect(
                 handler,
@@ -232,6 +255,7 @@ public class OperateLogAutoConfiguration {
                 properties.getApplication(),
                 properties.getEnvironment(),
                 properties.getVersion(),
-                properties.getMask().isEnabled());
+                properties.getMask().isEnabled(),
+                payloadPolicy);
     }
 }

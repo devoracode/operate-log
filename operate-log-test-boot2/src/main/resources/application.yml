@@ -23,3 +23,7 @@ operate-log:
   spel:
     enabled: true
     cache-size: 1024
+  payload:
+    max-request-length: 2048
+    max-response-length: 2048
+    max-error-stack-length: 4096

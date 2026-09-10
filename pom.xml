@@ -10,6 +10,15 @@
 
     <name>operate-log</name>
     <description>Operation log starter for Spring Boot 2.x and 3.x</description>
+    <url>https://github.com/devoracode/operate-log</url>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
 
     <modules>
         <module>operate-log-core</module>

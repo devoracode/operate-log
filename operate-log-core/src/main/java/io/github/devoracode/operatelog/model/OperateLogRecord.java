@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * 操作日志记录。
@@ -77,4 +78,11 @@ public class OperateLogRecord {
     private String errorMessage;
 
     private String errorStack;
+
+    /**
+     * 业务自定义字段。在业务方法内经
+     * {@link io.github.devoracode.operatelog.context.OperateLogContextHolder#putExtra(String, Object)}
+     * 写入；未写入时为 {@code null}（与其余可空字段一致，保持下游 schema 稳定）。
+     */
+    private Map<String, Object> extra;
 }

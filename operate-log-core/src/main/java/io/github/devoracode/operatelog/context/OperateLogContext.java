@@ -10,6 +10,8 @@ import org.aspectj.lang.ProceedingJoinPoint;
 
 import java.lang.reflect.Method;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * 操作日志执行上下文。
@@ -48,6 +50,13 @@ public class OperateLogContext {
     private Instant startTime;
 
     private Instant endTime;
+
+    /**
+     * 业务自定义字段。在业务方法内经 {@link OperateLogContextHolder#putExtra(String, Object)}
+     * 写入，随日志记录（{@code OperateLogRecord#extra}）一起落地。
+     * 已初始化的 final 字段，不参与 Lombok 构造器参数。
+     */
+    private final Map<String, Object> extra = new LinkedHashMap<String, Object>();
 
     public boolean hasError() {
         return this.error != null;

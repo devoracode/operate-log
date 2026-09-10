@@ -53,6 +53,17 @@
             <scope>provided</scope>
         </dependency>
 
+        <!--
+            编译期注解处理器：扫描 @ConfigurationProperties 生成
+            spring-configuration-metadata.json，为宿主 IDE 提供 operate-log.* 配置自动补全与文档提示。
+            provided 且不向宿主传递，不参与运行时。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- RequestContextHolder / RequestAttributes（两代 Spring 中二进制兼容） -->
         <dependency>
             <groupId>org.springframework</groupId>

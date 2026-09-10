@@ -11,6 +11,7 @@
 
     <artifactId>operate-log-spring-boot-starter</artifactId>
 
+    <name>operate-log-spring-boot-starter</name>
     <description>
         Spring Boot 2.x / 3.x 双栈操作日志 Starter。
         编译基线为 JDK 8（依赖 Boot 2.7.18 / Spring 5.3.32 / Servlet API 4.0 + 5.0，均为 Java 8 字节码），
@@ -97,6 +98,18 @@
             <artifactId>lombok</artifactId>
             <version>${lombok.version}</version>
             <scope>provided</scope>
+        </dependency>
+
+        <!--
+            双栈装配自动化测试（ApplicationContextRunner + FilteredClassLoader）。
+            test scope 不传递给宿主；版本由上方 Boot 2.7.18 BOM（dependencyManagement）管理，
+            jakarta/javax servlet-api 的 provided 依赖在测试编译与运行期均可见，
+            恰好覆盖「双栈共存优先 jakarta」「单栈各自命中」「无 servlet API 兜底」三种装配场景。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

@@ -11,6 +11,14 @@
 
     <artifactId>operate-log-test-boot3</artifactId>
 
+    <name>operate-log-test-boot3</name>
+    <description>Boot 3.x 冒烟示例（jakarta 栈），不参与发布与二进制兼容检查。</description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <japicmp.skip>true</japicmp.skip>
+    </properties>
+
     <!--
         导入 Boot 3 BOM 是必须项（修复既有隐患）：
         operate-log-core 以 compile 传递 Spring 5.3.32，与 starter-web 路径的 Spring 6.1.16

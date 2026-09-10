@@ -1,5 +1,12 @@
 # operate-log
 
+[![CI](https://github.com/devoracode/operate-log/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/devoracode/operate-log/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-8%2B-orange.svg)](#支持的版本)
+<!-- 首个版本发布到 Maven Central 后启用：
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.devoracode/operate-log-spring-boot-starter.svg)](https://central.sonatype.com/artifact/io.github.devoracode/operate-log-spring-boot-starter)
+-->
+
 面向 Spring Boot 2.x / 3.x 的轻量级操作日志 Starter。
 
 在关键业务方法上标注一个 `@OperateLog` 注解，即可自动记录：
@@ -381,6 +388,23 @@ OperateLogAspect @Around 拦截
 - Starter 的 Boot 相关编译依赖全部为 `provided`，不向宿主传递任何 Boot 2.7 坐标，与 Boot 3 宿主零冲突。
 - jakarta 栈编译期使用 Servlet API 5.0.0（Java 8 字节码），运行时兼容 Boot 3 提供的 6.0.0。
 
+## 支持的版本
+
+| 宿主 | 支持范围 | CI 认证组合 | 说明 |
+| --- | --- | --- | --- |
+| Spring Boot 2.x | **2.2+ 全 2.x 线** | **2.7.18 × JDK 8 / 17 / 21** | 自动配置经 `spring.factories` 注册（Boot 2 全系一致）；2.0 / 2.1 理论可用（Spring < 5.2 忽略 `proxyBeanMethods` 属性，仅退化为 CGLIB 全代理），未列入认证矩阵；1.x 不支持 |
+| Spring Boot 3.x | **3.0 – 3.5 全 3.x 线** | **3.3.13 × JDK 17 / 21** | `AutoConfiguration.imports` 注册机制自 3.0 起一致；所用 Spring / Jackson / Servlet API 均为跨小版本稳定面 |
+| Spring Boot 4.x | 未认证 | — | Framework 7 / Jackson 3 默认栈下 `com.fasterxml` `ObjectMapper` 可能缺 Bean，待评估后另行宣布 |
+
+- **JDK**：发布物字节码为 Java 8，任意 Boot 2 宿主 JDK ≥ 8；Boot 3 宿主跟随
+  Spring Framework 6 要求 JDK ≥ 17。
+- **Servlet API**：jakarta 实现按 Servlet 5.0 编译，运行于 5.0 / 6.0 / 6.1
+  均可（仅使用签名一致的 API）。
+- 日志字段与扩展点接口只依赖上述版本区间内稳定的公共 API。
+- 提示：截至 2026-09，Boot 2.x / 3.x 各线在**上游均已 OSS 停止维护**，
+  安全补丁请自行评估（商业延长支持如 HeroDevs NES 可选）。本项目仍会按
+  CI 矩阵持续认证兼容性。
+
 ## 构建
 
 | 环境 | 命令 | 构建内容 |
@@ -404,6 +428,19 @@ curl http://localhost:8080/demo/42
 ```
 
 预期：两个示例的控制台均输出 `operate-log={...}` 单行 JSON，且 POST 请求中 `password` 字段被脱敏为 `******`。
+
+持续集成（`.github/workflows/ci.yml`）在 **JDK 8 / 17 / 21** 三档跑全量
+`mvn clean verify`：双栈装配测试（jakarta→javax→fallback）、boot2/boot3
+MockMvc 端到端断言日志 JSON 字段均在矩阵内——「双栈 + 全 JDK 代际」矩阵
+是本项目对单栈同类库的护城河，以 CI 锁死，任何 PR 不允许回归。
+
+发布与二进制兼容：core / starter 的 MINOR、PATCH 升级必须对下游二进制兼容，
+合入前后可用 japicmp 门禁自查（详见 [RELEASE.md](RELEASE.md)）：
+
+```bash
+mvn -B -pl operate-log-core,operate-log-spring-boot-starter \
+    verify -Djapicmp.oldVersion=<上一发布版本>
+```
 
 ## 已知限制与规划
 

@@ -11,6 +11,14 @@
 
     <artifactId>operate-log-test-boot2</artifactId>
 
+    <name>operate-log-test-boot2</name>
+    <description>Boot 2.x 冒烟示例（javax 栈），不参与发布与二进制兼容检查。</description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <japicmp.skip>true</japicmp.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.github.devoracode</groupId>

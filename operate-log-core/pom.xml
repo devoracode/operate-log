@@ -11,7 +11,17 @@
 
     <artifactId>operate-log-core</artifactId>
 
+    <name>operate-log-core</name>
+    <description>
+        operate-log 核心：注解、AOP 切面、上下文模型、SpEL 引擎、序列化、脱敏、载荷防护、扩展点接口。
+    </description>
+
     <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-core</artifactId>

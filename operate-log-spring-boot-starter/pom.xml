@@ -1,0 +1,102 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.devoracode</groupId>
+        <artifactId>operate-log</artifactId>
+        <version>1.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>operate-log-spring-boot-starter</artifactId>
+
+    <description>
+        Spring Boot 2.x / 3.x 双栈操作日志 Starter。
+        编译基线为 JDK 8（依赖 Boot 2.7.18 / Spring 5.3.32 / Servlet API 4.0 + 5.0，均为 Java 8 字节码），
+        运行时按宿主 classpath 自动选择 javax 或 jakarta Servlet 实现。
+    </description>
+
+    <dependencyManagement>
+        <dependencies>
+            <!--
+                仅用于编译期定版（spring-boot-autoconfigure 等）。
+                该 BOM 不会传递给宿主：下方所有 Boot/Spring 相关依赖均为 provided。
+            -->
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot2.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- 唯一 compile 依赖：核心载荷（顺带传递 jackson / aspectjweaver / commons-lang3 / slf4j） -->
+        <dependency>
+            <groupId>io.github.devoracode</groupId>
+            <artifactId>operate-log-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!--
+            以下依赖全部 provided：只在编译期需要，运行时由宿主自带，
+            绝不把 2.7 版本的坐标传递给 Boot 3 宿主。
+        -->
+
+        <!-- 自动配置注解（@Configuration / @ConditionalOnXxx），Boot 2.7.18 与 3.x 包名签名一致 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- RequestContextHolder / RequestAttributes（两代 Spring 中二进制兼容） -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-web</artifactId>
+            <version>${spring.framework.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- javax 栈（Boot 2.x）编译期 Servlet API -->
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>4.0.1</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!--
+            jakarta 栈（Boot 3.x）编译期 Servlet API。
+            选 5.0.0 而非 6.0.0：5.0.0 是 Java 8 字节码，JDK 8 可编译；
+            Boot 3 宿主运行时实际提供 6.0.0，resolver 只使用两版本签名一致的 API，二进制兼容。
+        -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>5.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>8</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

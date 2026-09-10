@@ -1,0 +1,25 @@
+operate-log:
+  application: operate-log-test
+  environment: test
+  version: 1.1.0-SNAPSHOT
+  http:
+    trust-proxy: false
+    capture-headers: false
+  mask:
+    enabled: true
+    mask-text: "******"
+    fields:
+      - password
+      - passwd
+      - pwd
+      - token
+      - accessToken
+      - refreshToken
+      - authorization
+      - cookie
+      - set-cookie
+      - secret
+      - clientSecret
+  spel:
+    enabled: true
+    cache-size: 1024

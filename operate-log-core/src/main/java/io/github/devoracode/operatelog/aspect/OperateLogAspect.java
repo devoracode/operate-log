@@ -232,13 +232,13 @@ public class OperateLogAspect {
 
     private String resolveTraceId() {
         String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
+        String traceId = null;
         try {
-            return MDC.get(mdcKey);
+            traceId = MDC.get(mdcKey);
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: traceId resolution failed, degraded to null.", ex);
-            return null;
+            LOGGER.warn("operate-log: traceId resolution failed, degraded to generated UUID.", ex);
         }
-
+        return StringUtils.defaultIfBlank(traceId, UUID.randomUUID().toString());
     }
 
     private Operator resolveOperator() {

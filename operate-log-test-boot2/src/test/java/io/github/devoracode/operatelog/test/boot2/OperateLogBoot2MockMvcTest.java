@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -22,9 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
@@ -42,31 +39,42 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 class OperateLogBoot2MockMvcTest {
 
     private static final String LOG_PREFIX = "operate-log=";
+    private static final String APPENDER_NAME = "test-operate-log-capture";
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private static ListAppender<ILoggingEvent> appender;
 
     @Autowired
     private MockMvc mockMvc;
 
-    @BeforeAll
-    static void attachAppender() {
+    /**
+     * 必须挂在 @BeforeEach：@BeforeAll 早于 Spring 上下文启动，而 Boot 日志系统
+     * 初始化会重置 logback LoggerContext，把提前挂上的 appender 从 logger 树上摘掉。
+     * 命名 + 判重保证同一 LoggerContext 内幂等（上下文跨用例缓存复用）。
+     */
+    @BeforeEach
+    void attachAppenderAndReset() {
         Logger logger = (Logger) LoggerFactory.getLogger(DefaultOperateLogHandler.class);
-        appender = new ListAppender<ILoggingEvent>();
-        appender.start();
-        logger.addAppender(appender);
+        if (logger.getAppender(APPENDER_NAME) == null) {
+            appender = new ListAppender<ILoggingEvent>();
+            appender.setName(APPENDER_NAME);
+            appender.start();
+            logger.addAppender(appender);
+        } else {
+            appender = (ListAppender<ILoggingEvent>) logger.getAppender(APPENDER_NAME);
+        }
+        appender.list.clear();
+        MDC.clear();
     }
 
     @AfterAll
     static void detachAppender() {
         Logger logger = (Logger) LoggerFactory.getLogger(DefaultOperateLogHandler.class);
-        logger.detachAppender(appender);
-        appender.stop();
-    }
-
-    @BeforeEach
-    void reset() {
-        appender.list.clear();
-        MDC.clear();
+        ch.qos.logback.core.Appender<ILoggingEvent> existing = logger.getAppender(APPENDER_NAME);
+        if (existing != null) {
+            logger.detachAppender(existing);
+            existing.stop();
+        }
     }
 
     // ==================== 用例 ====================

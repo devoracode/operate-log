@@ -42,6 +42,15 @@ public class OperateLogProperties {
     private String version = "";
 
     /**
+     * traceId 所在的 MDC key，用于与链路追踪体系打通。
+     *
+     * <p>Micrometer Tracing（Brave/Sleuth 同）默认写入 {@code traceId}；
+     * OpenTelemetry logback-mdc 桥接常见为 {@code trace_id}。
+     * 取不到该 key 的值时自动生成 UUID；配置为空白时回退默认 key {@code traceId}。</p>
+     */
+    private String traceIdMdcKey = "traceId";
+
+    /**
      * HTTP 相关配置。
      */
     private Http http = new Http();

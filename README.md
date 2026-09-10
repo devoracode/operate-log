@@ -17,11 +17,12 @@
 
 | 特性 | 说明 |
 | --- | --- |
-| 注解驱动 | `@OperateLog` 方法级标注，Spring AOP 环绕拦截，零侵入 |
+| 注解驱动 | `@OperateLog` 方法级标注，Spring AOP 环绕拦截，零侵入；亦支持类级标注提供 module 等默认值，方法级按字段覆盖 |
 | 双栈兼容 | 单一 Starter 同时支持 Spring Boot 2.x（`javax.servlet`）与 3.x（`jakarta.servlet`），按宿主 classpath 自动条件装配；非 Web 环境自动降级为空实现 |
+| 记录时机 | `recordOn = ALWAYS / SUCCESS / ERROR` 直观过滤「仅成功 / 仅失败」，零 SpEL 开销，与 `condition` 取交集 |
 | SpEL 表达式 | 条件过滤、业务 ID 提取、描述模板（`#{...}` 模板语法） |
 | 敏感数据脱敏 | JSON 树递归脱敏，字段名忽略大小写，脱敏字段与替换文本可配置 |
-| 全链路关联 | traceId 优先取 MDC `traceId`（可与链路追踪打通），缺失时自动生成 UUID |
+| 全链路关联 | traceId 取 MDC，key 可配（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系），缺失时自动生成 UUID |
 | 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
 | 载荷防护 | `requestBody` / `responseBody` / `errorStack` 最大长度可配，超限截断打标记；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
 | 自定义字段 | 业务方法内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意业务字段（`extra`），无需扩展记录模型 |
@@ -95,16 +96,25 @@ public OperatorResolver operatorResolver() {
 
 ## 注解属性（`@OperateLog`）
 
-| 属性 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `module` | `String` | `""` | 模块名（如 `user` / `order`） |
-| `operation` | `String` | `""` | 操作名（如 `create` / `cancel`） |
-| `type` | `OperateType` | `OTHER` | 操作类型：`CREATE` / `UPDATE` / `DELETE` / `QUERY` / `EXPORT` / `IMPORT` / `LOGIN` / `LOGOUT` / `ENABLE` / `DISABLE` / `OTHER` |
-| `description` | `String` | `""` | 操作描述，支持 **SpEL 模板**（`#{...}` 包裹），如 `"查询用户 #{#userId}"` |
-| `businessId` | `String` | `""` | 业务 ID，**纯 SpEL 表达式**（无 `#{}`），求值结果转字符串，如 `"#userId"`、`"#result.id"` |
-| `condition` | `String` | `""` | 记录条件，**纯 SpEL 布尔表达式**；为空或求值非 `true` 时不记录。如 `"#success"`、`"#error != null"`、`"#costTime > 1000"`（慢调用审计） |
-| `recordRequest` | `boolean` | `true` | 是否记录方法参数（序列化进 `requestBody`） |
-| `recordResponse` | `boolean` | `false` | 是否记录返回值（序列化进 `responseBody`），需显式开启 |
+`@Target({METHOD, TYPE})`：可标注方法，也可标注类（类级默认值模式，见下）。
+
+| 属性 | 类型 | 默认值 | 类级默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `module` | `String` | `""` | ✓ | 模块名（如 `user` / `order`）；方法级为空时继承类级 |
+| `operation` | `String` | `""` | ✓ | 操作名（如 `create` / `cancel`）；同上 |
+| `type` | `OperateType` | `OTHER` | ✓ | 操作类型：`CREATE` / `UPDATE` / `DELETE` / `QUERY` / `EXPORT` / `IMPORT` / `LOGIN` / `LOGOUT` / `ENABLE` / `DISABLE` / `GRANT` / `REVOKE` / `DOWNLOAD` / `PRINT` / `OTHER`；方法级为 `OTHER` 时视为未设置 |
+| `description` | `String` | `""` | ✓ | 操作描述，支持 **SpEL 模板**（`#{...}` 包裹），如 `"查询用户 #{#userId}"` |
+| `businessId` | `String` | `""` | ✓ | 业务 ID，**纯 SpEL 表达式**（无 `#{}`），求值结果转字符串，如 `"#userId"`、`"#result.id"`。类级配置时对类内每个方法求值（注意参数名差异风险） |
+| `condition` | `String` | `""` | ✓ | 记录条件，**纯 SpEL 布尔表达式**；为空或求值非 `true` 时不记录。如 `"#success"`、`"#costTime > 1000"`（慢调用审计）。与 `recordOn` 取交集 |
+| `recordOn` | `RecordOn` | `ALWAYS` | ✓ | 记录时机：`ALWAYS` 总是 / `SUCCESS` 仅正常返回 / `ERROR` 仅抛出异常。先于 `condition` 短路求值，零 SpEL 成本 |
+| `recordRequest` | `boolean` | `true` | ✗ | 是否记录方法参数（序列化进 `requestBody`）。布尔无「未设置」态，不参与类级合并；仅类级注解时取类级值 |
+| `recordResponse` | `boolean` | `false` | ✗ | 是否记录返回值（序列化进 `responseBody`），需显式开启；同上 |
+
+**类级默认值模式**：类上标注 `@OperateLog` 后——
+
+- 类内**已标注**方法按字段继承类级默认（方法级显式值优先，规则见表中「类级默认」列）；
+- 类内**未标注**方法按类级配置直接记录（`@within` 切点拦截该类全部方法）——因此类级标注请用于确实需要全量审计的类；
+- SpEL 中的 `#annotation` 暴露的是合并后的生效视图。
 
 > 注解查找链：目标类 most-specific 方法 → 调用方法（JDK 代理时为接口方法）→ 目标类实现的全部接口上的同签名方法。CGLIB / JDK 代理、标注在接口方法上（JDK 代理场景）均可识别。
 > 注意：Spring 创建 CGLIB 代理的资格判定只看目标类方法，若注解**仅**标注在接口方法上且宿主使用 CGLIB 代理（Boot 默认 `proxyTargetClass=true`），advice 不会织入——此时请把注解同时放到实现类方法上。
@@ -112,15 +122,18 @@ public OperatorResolver operatorResolver() {
 ### 使用示例
 
 ```java
-// 仅在成功时记录（登录失败不刷日志）
+// 仅在成功时记录（登录失败不刷日志）——recordOn 比 condition 更直观且零 SpEL 开销
 @OperateLog(module = "auth", operation = "login", type = OperateType.LOGIN,
-        condition = "#success")
+        recordOn = RecordOn.SUCCESS)
 
 // 仅记录失败（排障场景）
 @OperateLog(module = "pay", operation = "refund", type = OperateType.UPDATE,
-        condition = "#error != null")
+        recordOn = RecordOn.ERROR)
 
-// 慢调用审计：只记录超过 1 秒的调用
+// 权限审计：授权 / 回收
+@OperateLog(module = "acl", operation = "grantRole", type = OperateType.GRANT)
+
+// 慢调用审计：只记录超过 1 秒的调用（condition 适合表达这类数值条件）
 @OperateLog(module = "report", operation = "export", type = OperateType.EXPORT,
         condition = "#costTime > 1000")
 
@@ -130,6 +143,18 @@ public OperatorResolver operatorResolver() {
 
 // 大参数方法关闭参数记录（返回值默认也不记录，通常无需额外设置）
 @OperateLog(module = "file", operation = "upload", recordRequest = false)
+
+// 类级默认值：类上提供 module / type，方法级只写差异字段；
+// 未标注的方法（archive）也会按类级配置记录
+@OperateLog(module = "order", type = OperateType.UPDATE)
+@Service
+public class OrderService {
+
+    @OperateLog(operation = "cancel", businessId = "#orderNo") // module/type 继承类级
+    public void cancel(String orderNo) { ... }
+
+    public void archive(String orderNo) { ... }                 // 按类级默认记录
+}
 ```
 
 ## SpEL 支持
@@ -149,7 +174,7 @@ public OperatorResolver operatorResolver() {
 | `#traceId` | 当前链路 traceId |
 | `#costTime` | 已耗时（`long`，毫秒） |
 | `#startTime` / `#endTime` | 起止时间 `Instant` |
-| `#annotation` | 当前 `@OperateLog` 注解实例 |
+| `#annotation` | 当前生效的 `@OperateLog` 视图（类级默认值与方法级合并后） |
 | `#context` | 完整 `OperateLogContext` |
 
 - `description` 使用**模板语法**：`"订单 #{#orderNo} 支付成功"`，仅 `#{...}` 内求值，其余为字面文本。
@@ -168,6 +193,7 @@ operate-log:
   application: order-app          # 应用名，写入日志（多应用聚合检索时区分来源）
   environment: prod               # 运行环境标识（dev / test / prod）
   version: 1.0.0                  # 应用版本号
+  trace-id-mdc-key: traceId       # traceId 的 MDC key（对齐追踪体系可改为 trace_id 等）
   http:
     trust-proxy: false            # 是否信任反向代理头（X-Forwarded-For / X-Real-IP）
     capture-headers: false        # 是否采集完整请求头（写入 requestHeaders）
@@ -205,6 +231,7 @@ operate-log:
 | `operate-log.application` | `""` | 应用名 |
 | `operate-log.environment` | `""` | 环境标识 |
 | `operate-log.version` | `""` | 版本号 |
+| `operate-log.trace-id-mdc-key` | `traceId` | traceId 的 MDC key。与链路追踪体系的 MDC 写入 key 对齐（Micrometer/Sleuth 常见 `traceId`，OTel logback 桥接常见 `trace_id`）；取不到时自动生成 UUID，配置空白回退默认 key |
 | `operate-log.http.trust-proxy` | `false` | 信任代理头时，客户端 IP 解析顺序：`X-Forwarded-For`（取逗号链第一个）→ `X-Real-IP` → `getRemoteAddr()`；否则直接取 `getRemoteAddr()`。**仅在可信网络边界后开启**，防止客户端伪造 IP |
 | `operate-log.http.capture-headers` | `false` | 开启后采集全部请求头写入 `requestHeaders`（JSON 对象）。注意头部可能含 Cookie 等敏感信息，开启后脱敏器会一并处理 |
 | `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段 |
@@ -222,7 +249,7 @@ operate-log:
 | 字段 | 来源 | 说明 |
 | --- | --- | --- |
 | `id` | 自动生成 | 日志记录 UUID |
-| `traceId` | MDC `traceId` / 自动生成 | 全链路 ID，优先取 MDC 中的 `traceId`（可与 Sleuth / Zipkin 等链路追踪打通） |
+| `traceId` | MDC（key = `operate-log.trace-id-mdc-key`，默认 `traceId`）/ 自动生成 | 全链路 ID，优先按配置 key 读 MDC（可与 Sleuth / Micrometer / Zipkin 等链路追踪打通），缺失时自动生成 UUID |
 | `application` / `environment` / `version` | 配置 | 应用、环境、版本 |
 | `module` / `operation` / `operationType` | 注解 | 模块、操作、操作类型 |
 | `description` | 注解 + SpEL | 模板求值后的描述 |
@@ -318,7 +345,7 @@ public SensitiveDataMasker sensitiveDataMasker(ObjectMapper mapper) {
         ▼
 OperateLogAspect @Around 拦截
         │
-        ├─► 解析 MDC traceId（缺失生成 UUID）
+        ├─► 解析 MDC traceId（key 可配，缺失生成 UUID）
         ├─► OperatorResolver 解析操作人（异常降级 null）
         ├─► HttpContextResolver 解析 HTTP 上下文（异常降级 null）
         │
@@ -327,6 +354,7 @@ OperateLogAspect @Around 拦截
         │
         ▼
    finally 中 handleSafely（全程 try-catch Throwable，绝不影响业务；失败以 debug 暴露）
+        ├─► recordOn（ALWAYS/SUCCESS/ERROR）先行短路 → 不满足直接跳过
         ├─► condition SpEL 条件不满足 → 直接跳过
         ├─► 组装 OperateLogRecord（参数忽略类型过滤 + 序列化整组/逐元素降级 + 敏感脱敏 + 长度截断）
         ├─► OperateLogHandler.handle(record)
@@ -383,10 +411,13 @@ curl http://localhost:8080/demo/42
 
 - 异步 / 批量 Handler（当前 Handler 同步调用，自定义异步 Handler 可实现等价效果）。
 - 内置 JDBC / MQ / Redis / ES Handler（请通过 `OperateLogHandler` 扩展点自行落地）。
-- CGLIB 代理 + 注解仅标注接口方法（advice 不织入，见「注解属性」处的说明；JDK 代理场景已支持接口注解查找）。
+- CGLIB 代理 + 注解仅标注接口方法（advice 不织入，见「注解属性」处的说明；JDK 代理场景已支持接口注解查找）。类级注解同理：`@within` 拦截与类级默认值以**实现类自身**的类级注解为准，标注在接口上的类级注解不作为默认值来源。
+- `recordRequest` / `recordResponse` 布尔字段不参与类级合并（注解属性无「未设置」态）；如需全局默认，自定义 `OperateLog` 组合注解或直接覆盖切面 Bean。
 
 > 已实现（原计划项）：载荷长度截断（`operate-log.payload.*`）、序列化忽略类型与逐元素降级、
-> `operate-log.spel.enabled` 生效（引擎直通降级）、表达式缓存 LRU 化、`extra` 自定义字段通道。
+> `operate-log.spel.enabled` 生效（引擎直通降级）、表达式缓存 LRU 化、`extra` 自定义字段通道、
+> traceId MDC key 可配置（`trace-id-mdc-key`）、`recordOn` 记录时机过滤、类级注解默认值、
+> `OperateType` 扩展（GRANT / REVOKE / DOWNLOAD / PRINT）。
 
 ## License
 

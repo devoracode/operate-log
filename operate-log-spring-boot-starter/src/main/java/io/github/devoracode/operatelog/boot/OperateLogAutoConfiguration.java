@@ -256,6 +256,7 @@ public class OperateLogAutoConfiguration {
                 properties.getEnvironment(),
                 properties.getVersion(),
                 properties.getMask().isEnabled(),
-                payloadPolicy);
+                payloadPolicy,
+                properties.getTraceIdMdcKey());
     }
 }

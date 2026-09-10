@@ -2,6 +2,7 @@ operate-log:
   application: operate-log-test
   environment: test
   version: 1.1.0-SNAPSHOT
+  trace-id-mdc-key: traceId   # traceId 的 MDC key，可对齐链路追踪体系（如 trace_id）
   http:
     trust-proxy: false
     capture-headers: false

@@ -48,7 +48,7 @@ Boot 2.x 与 3.x 使用同一坐标（Starter 本体为 Java 8 字节码；Boot 
 <dependency>
     <groupId>io.github.devoracode</groupId>
     <artifactId>operate-log-spring-boot-starter</artifactId>
-    <version>1.1.0-SNAPSHOT</version>
+    <version>latestVersion</version>
 </dependency>
 ```
 

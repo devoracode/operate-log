@@ -93,9 +93,7 @@ public class OperateLogAspect {
             targetMethod = AopUtils.getMostSpecificMethod(invocationMethod, targetClass);
             annotation = resolveOperateLog(invocationMethod, targetMethod, targetClass);
         } catch (Throwable ex) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("operate-log: annotation lookup failed, logging skipped.", ex);
-            }
+            LOGGER.warn("operate-log: annotation lookup failed, logging skipped.", ex);
             return joinPoint.proceed();
         }
         if (annotation == null) {
@@ -113,9 +111,7 @@ public class OperateLogAspect {
             context.setOperator(resolveOperator());
             context.setHttp(resolveHttpContext());
         } catch (Throwable ex) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("operate-log: context initialization failed, logging skipped.", ex);
-            }
+            LOGGER.warn("operate-log: context initialization failed, logging skipped.", ex);
             return joinPoint.proceed();
         }
         // 绑定线程上下文：业务方法内可通过 OperateLogContextHolder#putExtra 追加自定义字段
@@ -236,17 +232,20 @@ public class OperateLogAspect {
 
     private String resolveTraceId() {
         String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
-        String traceId = MDC.get(mdcKey);
-        return StringUtils.defaultIfBlank(traceId, UUID.randomUUID().toString());
+        try {
+            return MDC.get(mdcKey);
+        } catch (Throwable ex) {
+            LOGGER.warn("operate-log: traceId resolution failed, degraded to null.", ex);
+            return null;
+        }
+
     }
 
     private Operator resolveOperator() {
         try {
             return this.operatorResolver.resolve();
         } catch (Throwable ex) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("operate-log: operator resolution failed, degraded to null.", ex);
-            }
+            LOGGER.warn("operate-log: operator resolution failed, degraded to null.", ex);
             return null;
         }
     }
@@ -255,9 +254,7 @@ public class OperateLogAspect {
         try {
             return this.httpContextResolver.resolve();
         } catch (Throwable ex) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("operate-log: http context resolution failed, degraded to null.", ex);
-            }
+            LOGGER.warn("operate-log: http context resolution failed, degraded to null.", ex);
             return null;
         }
     }
@@ -278,12 +275,10 @@ public class OperateLogAspect {
             OperateLogRecord record = buildRecord(context);
             this.handler.handle(record);
         } catch (Throwable ex) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("operate-log: failed to build/handle log record for module=[{}], " + "operation=[{}].",
-                        context.getAnnotation().module(),
-                        context.getAnnotation().operation(),
-                        ex);
-            }
+            LOGGER.warn("operate-log: failed to build/handle log record for module=[{}], " + "operation=[{}].",
+                    context.getAnnotation().module(),
+                    context.getAnnotation().operation(),
+                    ex);
         }
     }
 

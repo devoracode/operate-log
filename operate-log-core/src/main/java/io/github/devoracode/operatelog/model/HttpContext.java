@@ -17,20 +17,12 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class HttpContext {
-
     private String method;
-
     private String url;
-
     private String uri;
-
     private String query;
-
     private String ip;
-
     private String userAgent;
-
     private Integer status;
-
     private Map<String, String> headers;
 }

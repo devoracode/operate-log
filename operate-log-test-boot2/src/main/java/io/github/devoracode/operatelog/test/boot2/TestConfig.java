@@ -12,9 +12,8 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class TestConfig {
 
- @Bean
- public OperatorResolver operatorResolver() {
-     return new TestOperatorResolver();
- }
+    @Bean
+    public OperatorResolver operatorResolver() {
+        return new TestOperatorResolver();
+    }
 }
- 

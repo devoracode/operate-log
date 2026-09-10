@@ -11,8 +11,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class OperateLogBoot3TestApplication {
 
- public static void main(String[] args) {
-     SpringApplication.run(OperateLogBoot3TestApplication.class, args);
- }
+    public static void main(String[] args) {
+        SpringApplication.run(OperateLogBoot3TestApplication.class, args);
+    }
 }
- 

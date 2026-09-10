@@ -15,17 +15,14 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Operator {
-
     /**
      * 用户 ID。
      */
     private String userId;
-
     /**
      * 用户账号。
      */
     private String userAccount;
-
     /**
      * 用户名称。
      */

@@ -10,13 +10,12 @@ import io.github.devoracode.operatelog.resolver.OperatorResolver;
  */
 public class TestOperatorResolver implements OperatorResolver {
 
- @Override
- public Operator resolve() {
-     return Operator.builder()
-             .userId("10001")
-             .userAccount("demo")
-             .userName("测试用户")
-             .build();
- }
+    @Override
+    public Operator resolve() {
+        return Operator.builder()
+                .userId("10001")
+                .userAccount("demo")
+                .userName("测试用户")
+                .build();
+    }
 }
- 

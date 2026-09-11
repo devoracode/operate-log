@@ -1,6 +1,5 @@
 # operate-log
 
-[![CI](https://github.com/devoracode/operate-log/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/devoracode/operate-log/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-8%2B-orange.svg)](#支持的版本)
 <!-- 首个版本发布到 Maven Central 后启用：
@@ -103,7 +102,7 @@ public OperatorResolver operatorResolver() {
 
 ## 注解属性（`@OperateLog`）
 
-`@Target(ElementType.METHOD)`：**仅方法级**。类级标注（连同「方法级按字段继承类级默认值」的合并语义）已被移除——它会让 `@within` 连带拦截该类全部方法（getter、内部复用方法一并进日志），对高频核心类是性能与噪声的双重代价，收益不足。
+注解只标注在**方法**上（`@Target(ElementType.METHOD)`）：审计范围由业务方法逐个显式声明。类上不识别 `@OperateLog`——类级标注会连带拦截该类全部方法（getter、内部复用方法一并进日志），噪声与开销都不可控，因此不提供类级默认值与字段级继承语义。
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -145,9 +144,9 @@ public OperatorResolver operatorResolver() {
 // 大参数方法关闭参数记录（返回值默认也不记录，通常无需额外设置）
 @OperateLog(module = "file", operation = "upload", recordRequest = false)
 
-// 需要「整类统一配置」时：逐个方法显式标注（不再有类级默认值继承）。
+// 想覆盖一个类的多个方法：逐个方法显式标注即可。
 // 若确实需要按类粒度全量审计，请自行注册 OperateLogAspect Bean 并扩大切点，
-// 而不是把注解贴到类上——本组件不提供该语义。
+// 而不是把注解贴到类上——类上不识别 @OperateLog。
 @OperateLog(module = "order", operation = "cancel", type = OperateType.UPDATE, businessId = "#orderNo")
 public void cancel(String orderNo) { ... }
 ```
@@ -393,7 +392,7 @@ OperateLogAspect @Around 拦截
 | Spring Boot 2.x（JDK 8+） | `javax.servlet` | `...boot.servlet.javax` 栈 | `META-INF/spring.factories` |
 | Spring Boot 3.x（JDK 17+） | `jakarta.servlet` | `...boot.servlet.jakarta` 栈 | `META-INF/spring/...AutoConfiguration.imports` |
 
-- 装配结构（不依赖声明顺序）：自动配置拆为四个内部配置类，条件**两两互斥**，由 classpath 唯一决定：
+- 装配结构：四个内部配置类，栈间条件**两两互斥**，由 classpath 唯一决定（与声明次序无关）：
 
   ```text
   OperateLogAutoConfiguration              operate-log.enabled 总开关 + 属性绑定
@@ -404,10 +403,10 @@ OperateLogAspect @Around 拦截
   └── FallbackConfiguration                 @ConditionalOnMissingClass(两种 HttpServletRequest)
   ```
 
-  「jakarta 优先」由 `@ConditionalOnMissingClass` **显式表达**，而不是靠「javax 配置排在 jakarta 之后」；
-  兜底实现由「两种 Servlet API 都不存在」这一条件直接命中，保证非 Web 环境切面构造注入永远成立。
-  各 bean 方法上的 `@ConditionalOnMissingBean` 只用于「让位给用户自定义 Bean」，
-  不再承担栈间互斥职责——因此调整方法或内部类的排列次序不会改变装配结果
+  「jakarta 优先」是 `JavaxServletConfiguration` 上 `@ConditionalOnMissingClass` 的直接结论；
+  兜底实现由「两种 Servlet API 都不存在」命中，保证非 Web 环境切面构造注入永远成立。
+  `@ConditionalOnMissingBean` 在各类里只负责一件事：让位给用户自定义 Bean；
+  栈间互斥与兜底判定全由类级 classpath 条件承担，因此方法与内部类的排列次序不影响装配结果
   （由两个测试工程的 `...StarterAssemblyTest` 锁死：任一 classpath 组合下都只有一套实现）。
 - 条件注解一律用 `name = "..."` 字符串形式，条件 bean 方法的返回/参数类型只出现 core 接口
   （栈专属类型只在方法体内 `new`），因此条件未命中那一侧不会触发类加载失败。
@@ -415,9 +414,8 @@ OperateLogAspect @Around 拦截
 - `operate-log-core` 中 Spring 与 SLF4J 为 `optional`（版本只用于 core 自身编译，
   不进消费者依赖图），jackson-databind / aspectjweaver / commons-lang3 保留 compile 传递
   （宿主不必然提供；其版本 == Boot 2.7.18 基线，不会反向压过宿主版本）。
-  于是 Boot 2 宿主解析到 Spring 5.x、Boot 3 宿主解析到 Spring 6.x，
-  不再出现 `starter → core → spring-core:5.3.32` 这类锁定；
-  CI 的 `dependency-hygiene` 作业对三棵真实依赖树做回归锁定。
+  于是 Boot 2 宿主解析到 Spring 5.x、Boot 3 宿主解析到 Spring 6.x：宿主框架版本始终由宿主自己定；
+  CI 的 `dependency-hygiene` 作业对三棵真实依赖树做校验锁定。
 - jakarta 栈编译期使用 Servlet API 5.0.0（Java 8 字节码），运行时兼容 Boot 3 提供的 6.0.0。
 
 ## 支持的版本

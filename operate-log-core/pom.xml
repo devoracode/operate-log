@@ -16,36 +16,66 @@
         operate-log 核心：注解、AOP 切面、上下文模型、SpEL 引擎、序列化、脱敏、载荷防护、扩展点接口。
     </description>
 
+    <!--
+        ============================ 依赖边界 ============================
+        core 是库不是应用：可以在编译期依赖 Spring 5.3 / Boot 2.7 基线，但不能把这套版本
+        通过依赖图强加给消费者。若这些坐标是 compile 传递，消费者未 import Boot BOM 时
+        （自建 parent / 裸 POM）Maven 的「同深度先声明优先」可能让 core 的 Spring 5.x 胜出，
+        Boot 3 宿主启动即 NoSuchMethodError；slf4j 更隐蔽——1.7.x 优先时 logback 1.5 的
+        SLF4JServiceProvider 发现不了，全应用日志静默降为 NOP。
+
+        分类原则（宿主是否必然提供 + 跨代是否二进制兼容）：
+          · 宿主必然提供、跨代不兼容 → optional：Spring 五件套、slf4j-api
+          · 宿主不必然提供 → 保留 compile 传递：fory-json（组件自带的 JSON 实现）、
+            aspectjweaver、commons-lang3（改 optional 会逼宿主自行补依赖，破坏「加一个 Starter 即可用」）
+        aspectjweaver / commons-lang3 版本 == Boot 2.7.18 基线（见根 POM），只作为下界；
+        fory-json 不在 Boot BOM 内，由本组件定版，宿主需要时可用自身 dependencyManagement 覆盖。
+    -->
     <dependencies>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
+        <!-- 本模块不含单元测试：断言全部在 operate-log-test-boot2 / -boot3 的真实容器用例里。 -->
+
+        <!--
+            Spring / SLF4J 由宿主必然提供，标 optional 后只参与本模块编译。
+            前提：源码只用两代签名一致的公共 API（AopUtils / AnnotationUtils / ClassUtils /
+            DefaultParameterNameDiscoverer / SpelExpressionParser / RequestAttributes，
+            以及 slf4j 1.7 与 2.0 共有的 LoggerFactory / Logger / MDC）。
+        -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-core</artifactId>
             <version>${spring.framework.version}</version>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-aop</artifactId>
             <version>${spring.framework.version}</version>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
             <version>${spring.framework.version}</version>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-expression</artifactId>
             <version>${spring.framework.version}</version>
+            <optional>true</optional>
         </dependency>
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>${jackson.version}</version>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- 硬运行时依赖、宿主不必然提供：保留 compile 传递（分类原则见上） -->
+        <dependency>
+            <groupId>org.apache.fory</groupId>
+            <artifactId>fory-json</artifactId>
+            <version>${fory.version}</version>
         </dependency>
         <dependency>
             <groupId>org.aspectj</groupId>
@@ -56,11 +86,6 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
             <version>${commons-lang3.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>${slf4j.version}</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

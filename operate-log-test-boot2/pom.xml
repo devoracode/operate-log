@@ -20,6 +20,11 @@
     </properties>
 
     <dependencies>
+        <!--
+            本工程故意不 import Boot BOM：Spring / Jackson / logback / SLF4J 版本全部来自
+            下方 spring-boot-starter-web:2.7.18 的传递依赖，用来观察「库不推版本给宿主」时
+            宿主自身的解析结果。core 的 Spring / SLF4J 是 optional，不参与调解。
+        -->
         <dependency>
             <groupId>io.github.devoracode</groupId>
             <artifactId>operate-log-spring-boot-starter</artifactId>

@@ -17,25 +17,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 默认 SpEL 执行器。
+ * 默认 SpEL 执行器：表达式问题只影响字段质量，绝不中断日志链路。
+ * 总开关 {@code operate-log.spel.enabled=false} 时零求值（条件恒通过、模板原样输出、
+ * 求值返回 {@code null}）；单表达式失败按同一方向就地降级，原因以 debug 暴露。
  *
- * <p>两级降级保护，表达式问题只影响字段质量、绝不中断日志链路：</p>
- * <ul>
- *   <li><b>总开关</b>（{@code operate-log.spel.enabled}，对应构造参数 {@code enabled}）：
- *       关闭后 {@link #evaluateBoolean} 恒通过（不过滤）、{@link #evaluateTemplate}
- *       原样输出模板文本、{@link #evaluate} 返回 {@code null}，完全零求值开销。</li>
- *   <li><b>单表达式失败</b>（语法错误、空指针访问、类型不匹配等）：按同样的方向就地降级
- *       ——condition 视为通过、模板输出原文、businessId 记 {@code null}，并以 debug
- *       日志暴露原因，不向上抛异常。</li>
- * </ul>
- *
- * <p>表达式缓存为定容 LRU（access-order {@link LinkedHashMap} + 容量上限），
- * 超出容量淘汰最久未使用项；容量到达后仍可继续缓存新表达式，
- * 避免旧「只挡新增、永不失效」策略在表达式数量持续增长时整体退化。
- * 缓存访问经 {@link Collections#synchronizedMap} 包装保证线程安全；
- * 并发下未命中重复解析仅是幂等浪费，无需加全局锁。</p>
- *
- * @author devoracode
+ * <p>表达式缓存为定容 LRU（超出容量淘汰最久未使用项），{@link Collections#synchronizedMap}
+ * 保证线程安全；并发下未命中重复解析只是幂等浪费，因此不加全局锁。</p>
  */
 public class DefaultSpelEngine implements SpelEngine {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSpelEngine.class);

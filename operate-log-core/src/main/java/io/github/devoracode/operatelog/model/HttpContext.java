@@ -8,9 +8,8 @@ import lombok.NoArgsConstructor;
 import java.util.Map;
 
 /**
- * 当前 HTTP 请求上下文。
- *
- * @author devoracode
+ * 当前 HTTP 请求上下文（请求侧快照，不含响应状态码；原因见
+ * {@link io.github.devoracode.operatelog.resolver.HttpContextResolver}）。
  */
 @Data
 @Builder
@@ -23,6 +22,5 @@ public class HttpContext {
     private String query;
     private String ip;
     private String userAgent;
-    private Integer status;
     private Map<String, String> headers;
 }

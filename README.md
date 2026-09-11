@@ -1,6 +1,5 @@
 # operate-log
 
-[![CI](https://github.com/devoracode/operate-log/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/devoracode/operate-log/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-8%2B-orange.svg)](#支持的版本)
 <!-- 首个版本发布到 Maven Central 后启用：
@@ -13,7 +12,7 @@
 
 - **谁**在操作（操作人扩展点，可对接登录态 / Session / Token）
 - **操作了什么**（模块、操作、操作类型、业务 ID、SpEL 描述模板）
-- **怎么操作的**（HTTP 请求方法 / URL / 参数 / 响应 / 状态码 / 客户端 IP / User-Agent）
+- **怎么操作的**（HTTP 请求方法 / URL / 参数 / 响应 / 客户端 IP / User-Agent）
 - **结果如何**（成功 / 失败、耗时、异常类型与堆栈、traceId 全链路关联）
 
 默认以单行 JSON 输出到 SLF4J，业务方可通过扩展点替换为任意落地方式（数据库、MQ、ES、审计系统等）。
@@ -24,14 +23,14 @@
 
 | 特性 | 说明 |
 | --- | --- |
-| 注解驱动 | `@OperateLog` 方法级标注，Spring AOP 环绕拦截，零侵入；亦支持类级标注提供 module 等默认值，方法级按字段覆盖 |
+| 注解驱动 | `@OperateLog` 方法级标注（`@Target(METHOD)`），Spring AOP 环绕拦截，零侵入 |
 | 双栈兼容 | 单一 Starter 同时支持 Spring Boot 2.x（`javax.servlet`）与 3.x（`jakarta.servlet`），按宿主 classpath 自动条件装配；非 Web 环境自动降级为空实现 |
 | 记录时机 | `recordOn = ALWAYS / SUCCESS / ERROR` 直观过滤「仅成功 / 仅失败」，零 SpEL 开销，与 `condition` 取交集 |
 | SpEL 表达式 | 条件过滤、业务 ID 提取、描述模板（`#{...}` 模板语法） |
 | 敏感数据脱敏 | JSON 树递归脱敏，字段名忽略大小写，脱敏字段与替换文本可配置 |
 | 全链路关联 | traceId 取 MDC，key 可配（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系），缺失时自动生成 UUID |
 | 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
-| 载荷防护 | `requestBody` / `responseBody` / `errorStack` 最大长度可配，超限截断打标记；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
+| 载荷防护 | `requestBody` / `responseBody` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
 | 自定义字段 | 业务方法内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意业务字段（`extra`），无需扩展记录模型 |
 | 可插拔扩展点 | Handler / 操作人解析 / HTTP 上下文解析 / 序列化 / 脱敏 / SpEL 引擎 / 载荷策略全部可替换（`@ConditionalOnMissingBean` 自动让位） |
 | 异常降级 | 操作人、HTTP 上下文解析失败时降级为 `null`，SpEL 表达式求值失败按方向降级（condition 视为通过、模板输出原文），日志其余字段照常记录 |
@@ -40,10 +39,10 @@
 
 | 模块 | 说明 |
 | --- | --- |
-| `operate-log-core` | 核心：注解、AOP 切面、上下文模型（含 `extra` 自定义字段通道）、SpEL 引擎、序列化、脱敏、载荷防护（PayloadPolicy）、Handler / Resolver 扩展点。依赖 Spring 5.3 / Jackson / AspectJ / Commons Lang3 / SLF4J，Java 8 基线 |
+| `operate-log-core` | 核心：注解、AOP 切面、上下文模型（含 `extra` 自定义字段通道）、SpEL 引擎、序列化、脱敏、载荷防护（PayloadPolicy）、Handler / Resolver 扩展点。Java 8 基线；Spring 与 SLF4J 为 `optional`（版本由宿主 Boot 决定），fory-json / aspectjweaver / commons-lang3 以 compile 传递（宿主不必然提供）。组件自带 JSON 实现，不依赖宿主 Jackson |
 | `operate-log-spring-boot-starter` | Boot 2.x / 3.x 双栈自动装配：`javax` / `jakarta` 两套 Servlet 解析实现按 classpath 自动选择，非 Web 环境兜底。Java 8 字节码，Boot 相关依赖全部 `provided` 零传递 |
 | `operate-log-test-boot2` | Boot 2.x 可运行示例（`javax` 栈冒烟） |
-| `operate-log-test-boot3` | Boot 3.x 可运行示例（`jakarta` 栈冒烟，JDK 17+ 构建时自动纳入，见「构建」） |
+| `operate-log-test-boot3` | Boot 3.x 可运行示例与全部集成用例（`jakarta` 栈，JDK 17+ 时自动纳入构建） |
 
 ## 快速开始
 
@@ -59,7 +58,7 @@ Boot 2.x 与 3.x 使用同一坐标（Starter 本体为 Java 8 字节码；Boot 
 </dependency>
 ```
 
-> 要求宿主为 Web 应用（含 `ObjectMapper` Bean，Spring Boot Web 应用默认具备）。
+> 无额外要求：JSON 由组件自带的 Apache Fory 完成，宿主不需要提供 `ObjectMapper` Bean 或任何 Jackson 坐标。
 > 非 Web 环境（定时任务、后台服务）也能工作：HTTP 相关字段自动降级为 `null`。
 
 ### 2. 标注注解
@@ -78,7 +77,7 @@ public UserVO query(@PathVariable String userId) { ... }
 方法执行后，控制台即输出单行 JSON：
 
 ```text
-operate-log={"id":"...","traceId":"04d3122e-...","application":"order-app","environment":"prod","version":"1.0.0","module":"user","operation":"query","operationType":"QUERY","description":"查询用户 42","businessId":"42","operatorUserId":"10001","operatorUserAccount":"demo","operatorUserName":"演示用户","requestMethod":"GET","requestUrl":"http://localhost:8080/demo/42","requestUri":"/demo/42","requestQuery":null,"requestHeaders":null,"requestBody":"[\"42\"]","responseBody":"{\"userId\":\"42\",\"message\":\"ok\"}","httpStatus":200,"clientIp":"127.0.0.1","userAgent":"curl/8.21.0","success":true,"costTime":4,"startTime":"...","endTime":"...","errorType":null,"errorMessage":null,"errorStack":null}
+operate-log={"id":"...","traceId":"04d3122e-...","application":"order-app","environment":"prod","version":"1.0.0","module":"user","operation":"query","operationType":"QUERY","description":"查询用户 42","businessId":"42","operatorUserId":"10001","operatorUserAccount":"demo","operatorUserName":"演示用户","requestMethod":"GET","requestUrl":"http://localhost:8080/demo/42","requestUri":"/demo/42","requestQuery":null,"requestHeaders":null,"requestBody":"[\"42\"]","responseBody":"{\"userId\":\"42\",\"message\":\"ok\"}","clientIp":"127.0.0.1","userAgent":"curl/8.21.0","success":true,"costTime":4,"startTime":"...","endTime":"...","errorType":null,"errorMessage":null,"errorStack":null}
 ```
 
 ### 3. 对接操作人（推荐）
@@ -103,25 +102,19 @@ public OperatorResolver operatorResolver() {
 
 ## 注解属性（`@OperateLog`）
 
-`@Target({METHOD, TYPE})`：可标注方法，也可标注类（类级默认值模式，见下）。
+注解只标注在**方法**上（`@Target(ElementType.METHOD)`）：审计范围由业务方法逐个显式声明。类上不识别 `@OperateLog`——类级标注会连带拦截该类全部方法（getter、内部复用方法一并进日志），噪声与开销都不可控，因此不提供类级默认值与字段级继承语义。
 
-| 属性 | 类型 | 默认值 | 类级默认 | 说明 |
-| --- | --- | --- | --- | --- |
-| `module` | `String` | `""` | ✓ | 模块名（如 `user` / `order`）；方法级为空时继承类级 |
-| `operation` | `String` | `""` | ✓ | 操作名（如 `create` / `cancel`）；同上 |
-| `type` | `OperateType` | `OTHER` | ✓ | 操作类型：`CREATE` / `UPDATE` / `DELETE` / `QUERY` / `EXPORT` / `IMPORT` / `LOGIN` / `LOGOUT` / `ENABLE` / `DISABLE` / `GRANT` / `REVOKE` / `DOWNLOAD` / `PRINT` / `OTHER`；方法级为 `OTHER` 时视为未设置 |
-| `description` | `String` | `""` | ✓ | 操作描述，支持 **SpEL 模板**（`#{...}` 包裹），如 `"查询用户 #{#userId}"` |
-| `businessId` | `String` | `""` | ✓ | 业务 ID，**纯 SpEL 表达式**（无 `#{}`），求值结果转字符串，如 `"#userId"`、`"#result.id"`。类级配置时对类内每个方法求值（注意参数名差异风险） |
-| `condition` | `String` | `""` | ✓ | 记录条件，**纯 SpEL 布尔表达式**；为空或求值非 `true` 时不记录。如 `"#success"`、`"#costTime > 1000"`（慢调用审计）。与 `recordOn` 取交集 |
-| `recordOn` | `RecordOn` | `ALWAYS` | ✓ | 记录时机：`ALWAYS` 总是 / `SUCCESS` 仅正常返回 / `ERROR` 仅抛出异常。先于 `condition` 短路求值，零 SpEL 成本 |
-| `recordRequest` | `boolean` | `true` | ✗ | 是否记录方法参数（序列化进 `requestBody`）。布尔无「未设置」态，不参与类级合并；仅类级注解时取类级值 |
-| `recordResponse` | `boolean` | `false` | ✗ | 是否记录返回值（序列化进 `responseBody`），需显式开启；同上 |
-
-**类级默认值模式**：类上标注 `@OperateLog` 后——
-
-- 类内**已标注**方法按字段继承类级默认（方法级显式值优先，规则见表中「类级默认」列）；
-- 类内**未标注**方法按类级配置直接记录（`@within` 切点拦截该类全部方法）——因此类级标注请用于确实需要全量审计的类；
-- SpEL 中的 `#annotation` 暴露的是合并后的生效视图。
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `module` | `String` | `""` | 模块名（如 `user` / `order`） |
+| `operation` | `String` | `""` | 操作名（如 `create` / `cancel`） |
+| `type` | `OperateType` | `OTHER` | 操作类型：`CREATE` / `UPDATE` / `DELETE` / `QUERY` / `EXPORT` / `IMPORT` / `LOGIN` / `LOGOUT` / `ENABLE` / `DISABLE` / `GRANT` / `REVOKE` / `DOWNLOAD` / `PRINT` / `OTHER` |
+| `description` | `String` | `""` | 操作描述，支持 **SpEL 模板**（`#{...}` 包裹），如 `"查询用户 #{#userId}"` |
+| `businessId` | `String` | `""` | 业务 ID，**纯 SpEL 表达式**（无 `#{}`），求值结果转字符串，如 `"#userId"`、`"#result.id"` |
+| `condition` | `String` | `""` | 记录条件，**纯 SpEL 布尔表达式**；为空或求值非 `true` 时不记录。如 `"#success"`、`"#costTime > 1000"`（慢调用审计）。与 `recordOn` 取交集 |
+| `recordOn` | `RecordOn` | `ALWAYS` | 记录时机：`ALWAYS` 总是 / `SUCCESS` 仅正常返回 / `ERROR` 仅抛出异常。先于 `condition` 短路求值，零 SpEL 成本 |
+| `recordRequest` | `boolean` | `true` | 是否记录方法参数（序列化进 `requestBody`） |
+| `recordResponse` | `boolean` | `false` | 是否记录返回值（序列化进 `responseBody`），需显式开启 |
 
 > 注解查找链：目标类 most-specific 方法 → 调用方法（JDK 代理时为接口方法）→ 目标类实现的全部接口上的同签名方法。CGLIB / JDK 代理、标注在接口方法上（JDK 代理场景）均可识别。
 > 注意：Spring 创建 CGLIB 代理的资格判定只看目标类方法，若注解**仅**标注在接口方法上且宿主使用 CGLIB 代理（Boot 默认 `proxyTargetClass=true`），advice 不会织入——此时请把注解同时放到实现类方法上。
@@ -151,17 +144,11 @@ public OperatorResolver operatorResolver() {
 // 大参数方法关闭参数记录（返回值默认也不记录，通常无需额外设置）
 @OperateLog(module = "file", operation = "upload", recordRequest = false)
 
-// 类级默认值：类上提供 module / type，方法级只写差异字段；
-// 未标注的方法（archive）也会按类级配置记录
-@OperateLog(module = "order", type = OperateType.UPDATE)
-@Service
-public class OrderService {
-
-    @OperateLog(operation = "cancel", businessId = "#orderNo") // module/type 继承类级
-    public void cancel(String orderNo) { ... }
-
-    public void archive(String orderNo) { ... }                 // 按类级默认记录
-}
+// 想覆盖一个类的多个方法：逐个方法显式标注即可。
+// 若确实需要按类粒度全量审计，请自行注册 OperateLogAspect Bean 并扩大切点，
+// 而不是把注解贴到类上——类上不识别 @OperateLog。
+@OperateLog(module = "order", operation = "cancel", type = OperateType.UPDATE, businessId = "#orderNo")
+public void cancel(String orderNo) { ... }
 ```
 
 ## SpEL 支持
@@ -181,7 +168,7 @@ public class OrderService {
 | `#traceId` | 当前链路 traceId |
 | `#costTime` | 已耗时（`long`，毫秒） |
 | `#startTime` / `#endTime` | 起止时间 `Instant` |
-| `#annotation` | 当前生效的 `@OperateLog` 视图（类级默认值与方法级合并后） |
+| `#annotation` | 当前方法上的 `@OperateLog` 注解实例 |
 | `#context` | 完整 `OperateLogContext` |
 
 - `description` 使用**模板语法**：`"订单 #{#orderNo} 支付成功"`，仅 `#{...}` 内求值，其余为字面文本。
@@ -246,8 +233,8 @@ operate-log:
 | `operate-log.mask.fields` | 见上 | 脱敏字段集合（11 个内置默认值） |
 | `operate-log.spel.enabled` | `true` | SpEL 开关。`false` 时引擎直通：condition 恒通过、description 输出模板原文、businessId 记 `null`，零求值开销 |
 | `operate-log.spel.cache-size` | `1024` | 表达式 LRU 缓存容量（实际生效最小值 64，超出淘汰最久未使用项） |
-| `operate-log.payload.max-request-length` | `2048` | `requestBody` / `requestHeaders` 最大字符数，`<=0` 不截断；截断后追加 `...[truncated]` |
-| `operate-log.payload.max-response-length` | `2048` | `responseBody` 最大字符数，`<=0` 不截断 |
+| `operate-log.payload.max-request-length` | `2048` | `requestBody` / `requestHeaders` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
+| `operate-log.payload.max-response-length` | `2048` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
 | `operate-log.payload.max-error-stack-length` | `4096` | `errorStack` 最大字符数，`<=0` 不截断 |
 | `operate-log.payload.ignore-types` | 12 项内置 | 序列化参数时跳过的类型（全限定类名，父类/接口命中即算），替换为 `<IGNORED:类型简名>`；配置后整体替换默认列表 |
 
@@ -266,7 +253,6 @@ operate-log:
 | `requestHeaders` | HTTP 上下文 + 序列化 | 请求头 JSON（仅 `capture-headers: true` 时） |
 | `requestBody` | 方法参数序列化 | 参数 JSON（`recordRequest = false` 时为 `null`） |
 | `responseBody` | 返回值序列化 | 响应 JSON（默认 `null`，需注解显式 `recordResponse = true`） |
-| `httpStatus` | HTTP 响应 | 状态码（通过反射获取，失败降级 `null`） |
 | `clientIp` / `userAgent` | HTTP 请求 | 客户端 IP（含代理解析）、User-Agent |
 | `success` | 运行时 | 方法是否正常返回 |
 | `costTime` | 运行时 | 耗时（毫秒） |
@@ -277,10 +263,29 @@ operate-log:
 > 所有可能为 `null` 的字段在 JSON 中保留为 `null` 值，便于下游解析 schema 稳定。
 > `requestBody` / `responseBody` / `requestHeaders` / `errorStack` 受 `payload.*` 长度上限保护，超限截断。
 
+## 为什么没有 `httpStatus`
+
+日志模型中**不提供 HTTP 状态码**，这是刻意的取舍而非遗漏：环绕通知的 `finally` 早于 Spring MVC 的返回值处理与全局异常处理，`response.getStatus()` 在那个时刻既可能读不到业务即将写入的值、也必然读不到 `ResponseEntity` / `@ResponseStatus` / `@ControllerAdvice` 的最终改写：
+
+```text
+Filter → DispatcherServlet → Interceptor#preHandle
+        → 【OperateLogAspect：resolve() 采集请求侧 → 业务方法 → finally 落地日志】  ← 切面到此为止
+        → HandlerMethodReturnValueHandler（ResponseEntity / @ResponseStatus 在此写 status）
+        → @ControllerAdvice / @ExceptionHandler（异常场景在此改 status）
+        → Interceptor#afterCompletion → Filter 收尾（容器错误页可能再改成 500）
+```
+
+留一个「看起来像最终状态码、实际是过程快照」的字段，比没有更危险（审计上会被当成判据）。因此：
+
+- 审计判据请用 `success` + `errorType` / `errorMessage`（异常路径由切面如实捕获）；
+- 需要 HTTP 访问状态码时，请在宿主侧用 `OncePerRequestFilter` / `HandlerInterceptor#afterCompletion` **另记一行访问日志**，用本组件的 `traceId` / `id` 关联；
+- 非要把最终状态码写进同一条审计日志，只能用「延后落地」：自定义 `OperateLogHandler` 先入队、状态定稿后补写再刷出。Starter 不自带 Filter——那会把「单一环绕通知、日志同步落地」的架构换成 Filter + Aspect 双体系。
+
 ## 敏感数据脱敏
 
 - 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段。
-- 实现为 **JSON 树递归**（Jackson `ObjectNode`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层。
+- 实现为 **JSON 树递归**（Fory 的 `JsonObject` / `JsonArray`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层。
+- 一个敏感字段都没命中时返回原文，不做无谓的重写（避免数字与格式漂移）。
 - 字段名匹配**忽略大小写**（`Password` / `PASSWORD` / `password` 均脱敏）。
 - 命中字段的值替换为 `mask-text`（默认 `******`）。
 - 待脱敏内容非 JSON 或脱敏过程异常时**原样返回**，不阻断日志流程。
@@ -296,8 +301,8 @@ operate-log:
 | `OperatorResolver` | 匿名（返回 `null`） | 对接登录态，提供 `userId` / `userAccount` / `userName` |
 | `HttpContextResolver` | Starter 内置（`javax` / `jakarta` 自动选择） | 定制 HTTP 上下文采集（如接入非 Servlet 容器） |
 | `ClientIpResolver` | Starter 内置（含 `trust-proxy` 逻辑） | 定制客户端 IP 解析策略 |
-| `OperateLogSerializer` | `JacksonOperateLogSerializer`（复用宿主 `ObjectMapper`） | 更换序列化器（如 FastJSON、自定义日期格式） |
-| `SensitiveDataMasker` | `JacksonSensitiveDataMasker` | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
+| `OperateLogSerializer` | `ForyOperateLogSerializer`（组件自带 Fory JSON，不用宿主 `ObjectMapper`） | 更换序列化器（如 Jackson、Gson、自定义日期格式） |
+| `SensitiveDataMasker` | `ForySensitiveDataMasker` | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
 | `SpelEngine` | `DefaultSpelEngine`（LRU 表达式缓存，支持 `enabled` 直通降级） | 定制表达式引擎（如增加自定义函数） |
 | `PayloadPolicy` | 按 `operate-log.payload.*` 组装 | 定制载荷防护（自定义截断 / 忽略类型逻辑，注册 Bean 即覆盖） |
 
@@ -333,9 +338,9 @@ public OperateLogHandler operateLogHandler(OperateLogJdbcRepository repository) 
 
 ```java
 @Bean
-public SensitiveDataMasker sensitiveDataMasker(ObjectMapper mapper) {
-    SensitiveDataMasker base = new JacksonSensitiveDataMasker(mapper,
-            Set.of("mobile", "phone"), null);
+public SensitiveDataMasker operateLogSensitiveDataMasker() {
+    Set<String> fields = new HashSet<String>(Arrays.asList("mobile", "phone"));
+    SensitiveDataMasker base = new ForySensitiveDataMasker(fields, null);
     return json -> postProcess(base.mask(json)); // 在默认脱敏基础上追加自定义规则
 }
 ```
@@ -354,25 +359,29 @@ OperateLogAspect @Around 拦截
         │
         ├─► 解析 MDC traceId（key 可配，缺失生成 UUID）
         ├─► OperatorResolver 解析操作人（异常降级 null）
-        ├─► HttpContextResolver 解析 HTTP 上下文（异常降级 null）
-        │
+        ├─► HttpContextResolver#resolve() 采集 HTTP 请求侧信息：method/url/uri/query/headers/ip/UA
+        │     （不采集 response status，理由见「为什么没有 httpStatus」）
         ▼
    执行业务方法（正常 → result；异常 → error 并原样抛出）
         │
         ▼
-   finally 中 handleSafely（全程 try-catch Throwable，绝不影响业务；失败以 debug 暴露）
-        ├─► recordOn（ALWAYS/SUCCESS/ERROR）先行短路 → 不满足直接跳过
-        ├─► condition SpEL 条件不满足 → 直接跳过
-        ├─► 组装 OperateLogRecord（参数忽略类型过滤 + 序列化整组/逐元素降级 + 敏感脱敏 + 长度截断）
-        ├─► OperateLogHandler.handle(record)
+   finally 中 finishQuietly（本方法绝不抛出：日志侧异常若逃逸会顶替业务异常）
+        ├─► 计时（endTime / costTime）
+        └─► handleSafely（全程 try-catch Throwable，绝不影响业务；失败以 warn 暴露）
+              ├─► recordOn（ALWAYS/SUCCESS/ERROR）先行短路 → 不满足直接跳过
+              ├─► condition SpEL 条件不满足 → 直接跳过
+              ├─► 组装 OperateLogRecord（忽略类型过滤 + 整组/逐元素序列化降级 + 脱敏 + 截断）
+              └─► OperateLogHandler.handle(record)
         └─► 恢复/清理 OperateLogContextHolder（嵌套场景还原外层，线程池零泄漏）
 ```
 
 关键设计保证：
 
 - **业务无感**：切面只在 `finally` 中做日志工作，业务异常原样透传；日志链路（注解查找、上下文构建、条件评估、序列化、脱敏、截断、Handler）整体包裹在 `catch (Throwable)` 中，任何日志侧故障不会导致业务请求失败。
-- **组件可观测**：所有被吞掉的故障（解析降级、组装失败、表达式失败）在 debug 级别输出原因，排查「日志为什么少了」时可开 `logging.level.io.github.devoracode.operatelog=debug`，不会静默吞。
-- **解析降级**：操作人 / HTTP 上下文解析各自独立 try-catch，单个解析器故障只损失对应字段。
+- **组件可观测**：所有被吞掉的故障（解析降级、组装失败、表达式失败）都以 `warn` 输出原因，排查「日志为什么少了」时开 `logging.level.io.github.devoracode.operatelog=debug` 可进一步降噪对照，不会静默吞。
+- **解析降级**：操作人 / HTTP 上下文解析各自独立 try-catch，单个解析器故障只损失对应字段，其余字段照常落地。
+- **finally 不吞业务异常**：切面 `finally` 内的计时、组装与落地全部包在 `finishQuietly` 的
+  `catch (Throwable)` 中——日志收尾异常绝不允许顶替业务异常（`recordOn=ERROR` 的审计恰恰依赖这点）。
 - **序列化隔离**：参数整体序列化失败时逐元素降级，坏元素替换为 `<UNSERIALIZABLE:类型>` 占位、其余照常记录；返回值序列化失败降级为占位符——序列化问题从不损失整条日志。
 
 ## 双栈 Starter 说明
@@ -384,17 +393,58 @@ OperateLogAspect @Around 拦截
 | Spring Boot 2.x（JDK 8+） | `javax.servlet` | `...boot.servlet.javax` 栈 | `META-INF/spring.factories` |
 | Spring Boot 3.x（JDK 17+） | `jakarta.servlet` | `...boot.servlet.jakarta` 栈 | `META-INF/spring/...AutoConfiguration.imports` |
 
-- 装配顺序：**jakarta 优先**（`@ConditionalOnClass(name = "jakarta.servlet.http.HttpServletRequest")`）→ 未命中则 javax 栈 → 两者均未命中（非 Web 环境）装配返回 `null` 的兜底实现，保证切面构造注入永远成立。
-- Starter 的 Boot 相关编译依赖全部为 `provided`，不向宿主传递任何 Boot 2.7 坐标，与 Boot 3 宿主零冲突。
+- 装配结构：四个内部配置类，栈间条件**两两互斥**，由 classpath 唯一决定（与声明次序无关）：
+
+  ```text
+  OperateLogAutoConfiguration              operate-log.enabled 总开关 + 属性绑定
+  ├── CommonConfiguration                   与栈无关：Serializer / Masker / SpelEngine / PayloadPolicy / Handler / Aspect
+  ├── JakartaServletConfiguration           @ConditionalOnClass(name = "jakarta.servlet.http.HttpServletRequest")
+  ├── JavaxServletConfiguration             @ConditionalOnClass(name = "javax.servlet.http.HttpServletRequest")
+  │                                        + @ConditionalOnMissingClass("jakarta.servlet.http.HttpServletRequest")
+  └── FallbackConfiguration                 @ConditionalOnMissingClass(两种 HttpServletRequest)
+  ```
+
+  「jakarta 优先」是 `JavaxServletConfiguration` 上 `@ConditionalOnMissingClass` 的直接结论；
+  兜底实现由「两种 Servlet API 都不存在」命中，保证非 Web 环境切面构造注入永远成立。
+  `@ConditionalOnMissingBean` 在各类里只负责一件事：让位给用户自定义 Bean；
+  栈间互斥与兜底判定全由类级 classpath 条件承担，因此方法与内部类的排列次序不影响装配结果
+  （由两个测试工程的 `...StarterAssemblyTest` 锁死：任一 classpath 组合下都只有一套实现）。
+- 条件注解一律用 `name = "..."` 字符串形式，条件 bean 方法的返回/参数类型只出现 core 接口
+  （栈专属类型只在方法体内 `new`），因此条件未命中那一侧不会触发类加载失败。
+- Starter 的 Boot / Spring 相关编译依赖全部为 `provided`，不向宿主传递任何 Boot 2.7 坐标，与 Boot 3 宿主零冲突。
+- `operate-log-core` 中 Spring 与 SLF4J 为 `optional`（版本只用于 core 自身编译，
+  不进消费者依赖图）；fory-json / aspectjweaver / commons-lang3 保留 compile 传递
+  （宿主不必然提供；后两者版本 == Boot 2.7.18 基线，不会反向压过宿主版本，
+  `fory-json` 不在 Boot BOM 内，由本组件定版，宿主可用自身 `dependencyManagement` 覆盖）。
+  于是 Boot 2 宿主解析到 Spring 5.x、Boot 3 宿主解析到 Spring 6.x：宿主框架版本始终由宿主自己定，
+  可分别用 `mvn -B -pl operate-log-test-boot2,operate-log-test-boot3 dependency:tree` 核对。
 - jakarta 栈编译期使用 Servlet API 5.0.0（Java 8 字节码），运行时兼容 Boot 3 提供的 6.0.0。
+
+## JSON 实现（Apache Fory）
+
+日志里的 JSON（`requestBody` / `responseBody` / `requestHeaders` / 记录本身）由 **Apache Fory JSON**
+（`org.apache.fory:fory-json`，1.7.1，支持 JDK 8+）生成，不经宿主 Jackson。
+这样 Boot 2（Jackson 2）、Boot 3（Jackson 2）、Boot 4（Jackson 3，包名已改为 `tools.jackson`）
+拿到的日志格式完全一致，也不会因宿主缺 `com.fasterxml` 的 `ObjectMapper` Bean 而装配失败。
+
+与宿主 Web 层输出的差异需要知道：
+
+- **不读 Jackson 注解**：`@JsonIgnore` / `@JsonProperty` / 命名策略 / 自定义 Module 对日志无效
+  （Fory 用自己的 `org.apache.fory.json.annotation`）。需要同样效果时自定义 `OperateLogSerializer` bean。
+- **属性集合更宽**：Fory 默认把类层级中的非静态字段（含私有）与 public getter 合并成属性，
+  因此比 Jackson 的默认可见性多记一些字段。
+- **时间形态**：`java.time` 走 ISO 文本，`java.util.Date` / `Calendar` 走 epoch 毫秒。
+- **空值仍输出**：记录里未赋值的字段以 `null` 出现（`writeNullFields(true)`），下游 schema 不随内容抖动。
+- **JDK 25+**：若禁用了 `sun.misc.Unsafe`，按 Fory 文档加
+  `--add-opens=java.base/java.lang.invoke=ALL-UNNAMED`。
 
 ## 支持的版本
 
-| 宿主 | 支持范围 | CI 认证组合 | 说明 |
+| 宿主 | 支持范围 | 验证基线（示例工程所用版本） | 说明 |
 | --- | --- | --- | --- |
-| Spring Boot 2.x | **2.2+ 全 2.x 线** | **2.7.18 × JDK 8 / 17 / 21** | 自动配置经 `spring.factories` 注册（Boot 2 全系一致）；2.0 / 2.1 理论可用（Spring < 5.2 忽略 `proxyBeanMethods` 属性，仅退化为 CGLIB 全代理），未列入认证矩阵；1.x 不支持 |
-| Spring Boot 3.x | **3.0 – 3.5 全 3.x 线** | **3.3.13 × JDK 17 / 21** | `AutoConfiguration.imports` 注册机制自 3.0 起一致；所用 Spring / Jackson / Servlet API 均为跨小版本稳定面 |
-| Spring Boot 4.x | 未认证 | — | Framework 7 / Jackson 3 默认栈下 `com.fasterxml` `ObjectMapper` 可能缺 Bean，待评估后另行宣布 |
+| Spring Boot 2.x | **2.2+ 全 2.x 线** | **Boot 2.7.18**（JDK 8 起，17 / 21 亦可） | 自动配置经 `spring.factories` 注册（Boot 2 全系一致）；2.0 / 2.1 理论可用（Spring < 5.2 忽略 `proxyBeanMethods` 属性，仅退化为 CGLIB 全代理），未列入认证范围；1.x 不支持 |
+| Spring Boot 3.x | **3.0 – 3.5 全 3.x 线** | **Boot 3.3.13**（JDK 17+，由 `boot3-test` profile 自动纳入） | `AutoConfiguration.imports` 注册机制自 3.0 起一致；所用 Spring / Servlet API 均为跨小版本稳定面 |
+| Spring Boot 4.x | 可用，未认证 | — | Boot 4 把默认 JSON 换成 Jackson 3（`tools.jackson`），而本组件不依赖宿主 Jackson，装配不受影响；Framework 7 与 Servlet 6.1 的组合尚待示例工程认证后转正 |
 
 - **JDK**：发布物字节码为 Java 8，任意 Boot 2 宿主 JDK ≥ 8；Boot 3 宿主跟随
   Spring Framework 6 要求 JDK ≥ 17。
@@ -402,45 +452,7 @@ OperateLogAspect @Around 拦截
   均可（仅使用签名一致的 API）。
 - 日志字段与扩展点接口只依赖上述版本区间内稳定的公共 API。
 - 提示：截至 2026-09，Boot 2.x / 3.x 各线在**上游均已 OSS 停止维护**，
-  安全补丁请自行评估（商业延长支持如 HeroDevs NES 可选）。本项目仍会按
-  CI 矩阵持续认证兼容性。
-
-## 构建
-
-| 环境 | 命令 | 构建内容 |
-| --- | --- | --- |
-| JDK 8 | `mvn clean install` | core + starter + test-boot2（3 个模块） |
-| JDK 17+ | `mvn clean install` | 上述 + test-boot3（`jdk [17,)` profile 自动激活） |
-
-冒烟验证（JDK 17 环境）：
-
-```bash
-# Boot 2 示例（javax 栈）
-mvn -pl operate-log-test-boot2 spring-boot:run
-# 另开终端
-curl http://localhost:8080/demo/42
-curl -X POST http://localhost:8080/demo -H "Content-Type: application/json" \
-     -d '{"name":"a","password":"secret"}'
-
-# Boot 3 示例（jakarta 栈）
-mvn -pl operate-log-test-boot3 spring-boot:run
-curl http://localhost:8080/demo/42
-```
-
-预期：两个示例的控制台均输出 `operate-log={...}` 单行 JSON，且 POST 请求中 `password` 字段被脱敏为 `******`。
-
-持续集成（`.github/workflows/ci.yml`）在 **JDK 8 / 17 / 21** 三档跑全量
-`mvn clean verify`：双栈装配测试（jakarta→javax→fallback）、boot2/boot3
-MockMvc 端到端断言日志 JSON 字段均在矩阵内——「双栈 + 全 JDK 代际」矩阵
-是本项目对单栈同类库的护城河，以 CI 锁死，任何 PR 不允许回归。
-
-发布与二进制兼容：core / starter 的 MINOR、PATCH 升级必须对下游二进制兼容，
-合入前后可用 japicmp 门禁自查（详见 [RELEASE.md](RELEASE.md)）：
-
-```bash
-mvn -B -pl operate-log-core,operate-log-spring-boot-starter \
-    verify -Djapicmp.oldVersion=<上一发布版本>
-```
+  安全补丁请自行评估（商业延长支持如 HeroDevs NES 可选）。
 
 ## 已知限制与规划
 
@@ -448,12 +460,15 @@ mvn -B -pl operate-log-core,operate-log-spring-boot-starter \
 
 - 异步 / 批量 Handler（当前 Handler 同步调用，自定义异步 Handler 可实现等价效果）。
 - 内置 JDBC / MQ / Redis / ES Handler（请通过 `OperateLogHandler` 扩展点自行落地）。
-- CGLIB 代理 + 注解仅标注接口方法（advice 不织入，见「注解属性」处的说明；JDK 代理场景已支持接口注解查找）。类级注解同理：`@within` 拦截与类级默认值以**实现类自身**的类级注解为准，标注在接口上的类级注解不作为默认值来源。
-- `recordRequest` / `recordResponse` 布尔字段不参与类级合并（注解属性无「未设置」态）；如需全局默认，自定义 `OperateLog` 组合注解或直接覆盖切面 Bean。
+- 注解只支持方法级（`@Target(METHOD)`）：不提供类级标注与「类级默认值继承」。需要整类全量审计时，
+  自行注册 `OperateLogAspect` / 扩大切点，而不是把注解贴到类上。
+- CGLIB 代理 + 注解仅标注接口方法（advice 不织入，见「注解属性」处的说明；JDK 代理场景已支持接口注解查找）。
+- 不记录 HTTP 状态码：切面时刻取不到最终值，`ResponseEntity` / `@ResponseStatus` /
+  `@ControllerAdvice` 改写的状态一律不在审计日志里，见「为什么没有 `httpStatus`」。
 
 > 已实现（原计划项）：载荷长度截断（`operate-log.payload.*`）、序列化忽略类型与逐元素降级、
 > `operate-log.spel.enabled` 生效（引擎直通降级）、表达式缓存 LRU 化、`extra` 自定义字段通道、
-> traceId MDC key 可配置（`trace-id-mdc-key`）、`recordOn` 记录时机过滤、类级注解默认值、
+> traceId MDC key 可配置（`trace-id-mdc-key`）、`recordOn` 记录时机过滤、
 > `OperateType` 扩展（GRANT / REVOKE / DOWNLOAD / PRINT）。
 
 ## License

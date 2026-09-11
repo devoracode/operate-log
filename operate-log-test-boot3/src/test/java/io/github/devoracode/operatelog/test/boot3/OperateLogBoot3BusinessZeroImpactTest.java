@@ -9,6 +9,7 @@ import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import io.github.devoracode.operatelog.handler.OperateLogHandler;
 import io.github.devoracode.operatelog.serializer.JacksonOperateLogSerializer;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -100,6 +101,16 @@ class OperateLogBoot3BusinessZeroImpactTest {
             appender = (ListAppender<ILoggingEvent>) logger.getAppender(APPENDER_NAME);
         }
         appender.list.clear();
+    }
+
+    @AfterAll
+    static void detachAppender() {
+        Logger logger = (Logger) LoggerFactory.getLogger(DefaultOperateLogHandler.class);
+        ch.qos.logback.core.Appender<ILoggingEvent> existing = logger.getAppender(APPENDER_NAME);
+        if (existing != null) {
+            logger.detachAppender(existing);
+            existing.stop();
+        }
     }
 
     @AfterEach

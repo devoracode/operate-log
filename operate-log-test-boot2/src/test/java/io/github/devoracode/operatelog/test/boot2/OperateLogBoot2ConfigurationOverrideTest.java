@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -53,17 +52,22 @@ class OperateLogBoot2ConfigurationOverrideTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @BeforeAll
-    static void prepareAppender() {
-        Logger logger = (Logger) LoggerFactory.getLogger(DefaultOperateLogHandler.class);
-        appender = new ListAppender<ILoggingEvent>();
-        appender.setName(APPENDER_NAME);
-        appender.start();
-        logger.addAppender(appender);
-    }
-
+    /**
+     * 必须挂在 @BeforeEach：@BeforeAll 早于 Spring 上下文启动，而 Boot 日志系统初始化会
+     * 重置 logback LoggerContext，把提前挂上的 appender 从 logger 树上摘掉（本模块其余
+     * 用例同一约定）。命名 + 判重保证同一 LoggerContext 内幂等（上下文跨用例缓存复用）。
+     */
     @BeforeEach
-    void clearAppender() {
+    void attachAppenderAndClear() {
+        Logger logger = (Logger) LoggerFactory.getLogger(DefaultOperateLogHandler.class);
+        if (logger.getAppender(APPENDER_NAME) == null) {
+            appender = new ListAppender<ILoggingEvent>();
+            appender.setName(APPENDER_NAME);
+            appender.start();
+            logger.addAppender(appender);
+        } else {
+            appender = (ListAppender<ILoggingEvent>) logger.getAppender(APPENDER_NAME);
+        }
         appender.list.clear();
     }
 

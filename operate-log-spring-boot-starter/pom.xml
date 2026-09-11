@@ -14,7 +14,7 @@
     <name>operate-log-spring-boot-starter</name>
     <description>
         Spring Boot 2.x / 3.x 双栈操作日志 Starter。
-        编译基线为 JDK 8（依赖 Boot 2.7.18 / Spring 5.3.32 / Servlet API 4.0 + 5.0，均为 Java 8 字节码），
+        编译基线为 JDK 8（依赖 Boot 2.7.18 / Spring 5.3.31 / Servlet API 4.0 + 5.0，均为 Java 8 字节码），
         运行时按宿主 classpath 自动选择 javax 或 jakarta Servlet 实现。
     </description>
 
@@ -35,7 +35,12 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- 唯一 compile 依赖：核心载荷（顺带传递 jackson / aspectjweaver / commons-lang3 / slf4j） -->
+        <!--
+            唯一 compile 依赖：核心载荷。
+            core 传递 jackson-databind / aspectjweaver / commons-lang3（core 的硬运行时依赖，
+            且跨 Boot 2/3 二进制兼容）；Spring 与 SLF4J 在 core 中已声明为 optional，
+            不会把 Boot 2 时代的 Spring / slf4j 1.7 版本污染给宿主（由宿主 BOM 定版）。
+        -->
         <dependency>
             <groupId>io.github.devoracode</groupId>
             <artifactId>operate-log-core</artifactId>
@@ -51,6 +56,19 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
+            <scope>provided</scope>
+        </dependency>
+
+        <!--
+            本模块源码直接使用 @Configuration / @Bean（spring-context），
+            而 core 已不再向宿主传递 Spring 坐标（optional），故必须自备编译期版本。
+            provided 不向宿主传递；其自身传递的 spring-core / beans / aop / expression
+            在本模块内同为 provided，仅参与编译与测试，运行时由宿主提供。
+        -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <version>${spring.framework.version}</version>
             <scope>provided</scope>
         </dependency>
 
@@ -101,16 +119,9 @@
         </dependency>
 
         <!--
-            双栈装配自动化测试（ApplicationContextRunner + FilteredClassLoader）。
-            test scope 不传递给宿主；版本由上方 Boot 2.7.18 BOM（dependencyManagement）管理，
-            jakarta/javax servlet-api 的 provided 依赖在测试编译与运行期均可见，
-            恰好覆盖「双栈共存优先 jakarta」「单栈各自命中」「无 servlet API 兜底」三种装配场景。
+            本模块不含单元测试：双栈装配（jakarta / javax / 兜底、用户 Bean 让位、属性绑定）
+            的可观测行为在 operate-log-test-boot2 / operate-log-test-boot3 中以真实容器验证。
         -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 
     <build>

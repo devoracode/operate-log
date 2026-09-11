@@ -20,6 +20,14 @@
     </properties>
 
     <dependencies>
+        <!--
+            本工程未 import 任何 Boot BOM，Spring / Jackson / logback / SLF4J 版本全部由
+            下方 spring-boot-starter-web:2.7.18 的传递依赖决定：core 已将 Spring 与 SLF4J
+            声明为 optional（不参与调解），其余三项传递下界与 Boot 2.7.18 基线一致，
+            因此不会出现宿主与库之间的混版。
+            与 Boot 3 工程对照：同一 Starter 产物在 Boot 2 解析到 Spring 5.x、在 Boot 3 解析到 Spring 6.x，
+            由 CI 的 dependency-hygiene 门禁锁定。
+        -->
         <dependency>
             <groupId>io.github.devoracode</groupId>
             <artifactId>operate-log-spring-boot-starter</artifactId>

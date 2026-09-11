@@ -20,12 +20,12 @@
     </properties>
 
     <!--
-        导入 Boot 3 BOM 是必须项（修复既有隐患）：
-        operate-log-core 以 compile 传递 Spring 5.3.32，与 starter-web 路径的 Spring 6.1.16
-        在依赖树中同深度，按 Maven「同深度先声明优先」规则 5.3.32 会胜出，
-        导致 Boot 3 运行时 Spring 版本混杂而崩溃。
-        dependencyManagement 优先于传递依赖调解，可将 core 传递的
-        spring-core/aop/context/expression、jackson 统一强制为 Boot 3.3.13 管理的版本。
+        Boot 3 BOM 导入是宿主版本的正常来源（与真实 Boot 3 应用一致）：
+        core 已把 spring-* / slf4j-api 标为 optional，不再以 Spring 5.x 参与依赖调解，
+        因此这里不再需要「用 dependencyManagement 压制库侧传递版本」的权宜写法；
+        jackson / logback / slf4j 一律由 BOM 定版。
+        「Starter 不得把 Spring 5 推给 Boot 3 宿主」这一约束不依赖本工程是否 import BOM，
+        由 CI 的 dependency-hygiene 门禁直接对依赖树校验锁定。
     -->
     <dependencyManagement>
         <dependencies>

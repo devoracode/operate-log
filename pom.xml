@@ -51,10 +51,21 @@
 
         <spring.boot2.version>2.7.18</spring.boot2.version>
         <spring.boot3.version>3.3.13</spring.boot3.version>
-        <spring.framework.version>5.3.32</spring.framework.version>
-        <jackson.version>2.15.4</jackson.version>
+        <!--
+            以下版本是 core / starter 的「编译基线」，同时也是 core 非 optional 传递依赖
+            （jackson-databind / aspectjweaver / commons-lang3）向消费者声明的**下界**。
+
+            纪律：下界必须 == Boot 2.7.18 所管理的版本，不得更高。
+            原因：消费者若把本 Starter 写在 spring-boot-starter-web 之前（常见写法），
+            Maven「同深度先声明优先」会让我方版本胜出；一旦我方版本高于宿主基线，
+            就会出现 jackson-databind 新、jackson-core/annotations 旧的**混版**（NoSuchMethodError 风险）。
+            Boot 3 宿主则由 BOM 统一上调（Jackson 2.x 线内二进制兼容，上调安全）。
+            Spring 与 SLF4J 已在 core 中标 optional，不再参与该调解。
+        -->
+        <spring.framework.version>5.3.31</spring.framework.version>
+        <jackson.version>2.13.5</jackson.version>
         <aspectj.version>1.9.7</aspectj.version>
-        <commons-lang3.version>3.14.0</commons-lang3.version>
+        <commons-lang3.version>3.12.0</commons-lang3.version>
         <slf4j.version>1.7.36</slf4j.version>
         <lombok.version>1.18.30</lombok.version>
 

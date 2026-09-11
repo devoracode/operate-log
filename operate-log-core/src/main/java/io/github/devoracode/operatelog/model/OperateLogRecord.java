@@ -38,7 +38,6 @@ public class OperateLogRecord {
     private String requestHeaders;
     private String requestBody;
     private String responseBody;
-    private Integer httpStatus;
     private String clientIp;
     private String userAgent;
     private boolean success;

@@ -15,7 +15,9 @@ import java.util.Set;
  * 不适合序列化的参数自动替换为占位符，避免序列化产出巨量垃圾或直接失败。</p>
  *
  * <ul>
- *   <li>长度上限 {@code <= 0} 表示不截断；截断后以 {@code ...[truncated]} 标记。</li>
+ *   <li>长度上限 {@code <= 0} 表示不截断；超限则截断到上限长度并以 {@code ...[truncated]} 标记，
+ *       <b>标记计入上限</b>（即 {@code result.length() <= maxLength} 恒成立）；
+ *       上限小于标记长度时只保长度、不打标记。</li>
  *   <li>忽略类型按 <b>全限定类名</b> 匹配，命中父类或任意接口（含传递接口）即算匹配，
  *       因此配置接口名（如 {@code org.springframework.web.multipart.MultipartFile}）
  *       即可覆盖全部实现类。</li>
@@ -88,17 +90,38 @@ public class PayloadPolicy {
     }
 
     /**
-     * 按最大长度截断，超长时保留前段并追加截断标记。
+     * 按最大长度截断：结果长度（含截断标记）恒不超过 {@code maxLength}。
+     *
+     * <p><b>语义约定</b>：{@code maxLength} 是「最终落地字符串的长度上限」，
+     * 因此截断标记 {@code ...[truncated]} 必须占用这份额度，而不是加在额度之外
+     * （历史实现 {@code substring(0, maxLength) + SUFFIX} 会让实际长度达到
+     * {@code maxLength + 14}（标记长 14 字符），与「最大长度」的配置语义相悖，也和
+     * {@code operate-log.payload.max-*} 的容量预算不符）。</p>
+     *
+     * <p><b>边界</b>：</p>
+     * <ul>
+     *   <li>{@code value == null}：原样返回 {@code null}；</li>
+     *   <li>{@code maxLength <= 0}：不截断，原样返回（配置语义「&lt;=0 表示不限制」）；</li>
+     *   <li>{@code value.length() <= maxLength}：无需截断，返回同一实例；</li>
+     *   <li>{@code 0 < maxLength <= SUFFIX.length()}：额度装不下标记，
+     *       此时<b>长度上限优先</b>，返回前 {@code maxLength} 个字符（不带标记），
+     *       这是唯一能同时守住「不越界」与「不抛异常」的取舍。</li>
+     * </ul>
      *
      * @param value     原值，可为 {@code null}
-     * @param maxLength 最大长度，{@code <= 0} 表示不截断
-     * @return 截断结果
+     * @param maxLength 最大长度（含标记），{@code <= 0} 表示不截断
+     * @return 截断结果，{@code maxLength > 0} 时保证 {@code result.length() <= maxLength}
      */
     public static String truncate(String value, int maxLength) {
         if (value == null || maxLength <= 0 || value.length() <= maxLength) {
             return value;
         }
-        return value.substring(0, maxLength) + TRUNCATED_SUFFIX;
+        int suffixLength = TRUNCATED_SUFFIX.length();
+        if (maxLength <= suffixLength) {
+            // 额度容不下截断标记：守住长度上限，放弃标记
+            return value.substring(0, maxLength);
+        }
+        return value.substring(0, maxLength - suffixLength) + TRUNCATED_SUFFIX;
     }
 
     private boolean isIgnored(Class<?> type) {

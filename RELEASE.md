@@ -99,10 +99,12 @@ README 依赖示例使用 `${latestVersion}` 风格的占位写法，正式文�
 
 | 组合 | 认证途径 |
 | --- | --- |
-| Boot 2.7.18 × JDK 8/17/21 | CI `build` job（boot2 模块 + core/starter 单测/装配测试） |
-| Boot 3.3.13 × JDK 17/21 | CI `build` job（JDK≥17 时 boot3-test profile 激活） |
-| jakarta→javax→fallback 装配顺序 | starter `OperateLogAutoConfigurationTest`（FilteredClassLoader） |
-| 双栈端到端日志字段 | boot2/boot3 `OperateLog*MockMvcTest` |
+| Boot 2.7.18 × JDK 8/17/21 | CI `build` job（`operate-log-test-boot2` 全部用例；core / starter 不含单元测试） |
+| Boot 3.3.13 × JDK 17/21 | CI `build` job（JDK≥17 时 boot3-test profile 激活，跑 `operate-log-test-boot3`） |
+| jakarta / javax / 无 Servlet API 三种装配形态 | 两个测试工程的 `OperateLog*StarterAssemblyTest`（`ApplicationContextRunner` + `FilteredClassLoader`），断言「任一 classpath 组合只装配一套实现」——装配正确性不依赖 bean 声明顺序 |
+| 双栈端到端日志字段 | boot2 / boot3 `OperateLog*MockMvcTest`（两侧用例逐条对称） |
+| 版本边界（库产物不得把 Spring / SLF4J 推给宿主） | CI `dependency-hygiene` job + `.github/scripts/dependency-hygiene.sh` |
 
-任何改动只要 CI 矩阵全绿即可认为双栈语义未破坏；新增装配分支必须同步
-新增 `ApplicationContextRunner` 用例。
+任何改动只要 CI 矩阵全绿即可认为双栈语义未破坏；新增装配分支必须同步在
+**两个**测试工程里各加一条对应用例（`ApplicationContextRunner` 或真实容器均可），
+不允许只加一侧——单侧全绿而另一侧行为不同，正是双栈组件最常见的回归形态。

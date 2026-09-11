@@ -6,7 +6,6 @@ import io.github.devoracode.operatelog.context.OperateLogContextHolder;
 import io.github.devoracode.operatelog.handler.OperateLogHandler;
 import io.github.devoracode.operatelog.model.HttpContext;
 import io.github.devoracode.operatelog.model.OperateLogRecord;
-import io.github.devoracode.operatelog.model.OperateType;
 import io.github.devoracode.operatelog.model.Operator;
 import io.github.devoracode.operatelog.model.RecordOn;
 import io.github.devoracode.operatelog.payload.PayloadPolicy;
@@ -30,7 +29,6 @@ import org.springframework.util.ClassUtils;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
@@ -48,16 +46,20 @@ import java.util.UUID;
  * 且宿主使用 CGLIB 代理（Spring Boot 默认 {@code proxyTargetClass=true}），
  * 该 advice 不会被织入——此时请将注解放到实现类方法上。</p>
  *
- * <p><b>类级注解与字段级合并</b>：切点同时接受 {@code @within}（类上标注），
- * 生效注解 = 方法级（含接口查找）与类级逐字段合并（见 {@link MergedOperateLog}）；
- * 无方法级注解的方法按类级配置直接记录。</p>
- *
  * <p><b>记录时机过滤</b>：{@code recordOn}（ALWAYS / SUCCESS / ERROR）在 SpEL
  * 条件之前先行短路，低成本实现「仅成功 / 仅失败」审计。</p>
  *
+ * <p><b>HTTP 上下文</b>：请求侧信息（method / url / uri / query / headers / clientIp /
+ * userAgent）在业务方法执行前经 {@link HttpContextResolver#resolve()} 一次性采集。
+ * 本组件<b>不记录 HTTP 状态码</b>：环绕通知的 {@code finally} 早于 Spring MVC 的返回值处理
+ * 与全局异常处理，此刻的 {@code response.getStatus()} 无法代表客户端实际拿到的状态，
+ * 与其记录一个易被误读为「最终状态」的值，不如不提供（审计判据用 {@code success} +
+ * {@code errorType} / {@code errorMessage}）。</p>
+ *
  * <p><b>业务零影响纪律</b>：注解查找、上下文构建、记录组装与 Handler 落地
- * 全部包裹独立 try-catch，任何日志侧故障仅以 debug 日志暴露，绝不向业务传播；
- * 业务异常原样透传。</p>
+ * 全部包裹独立 try-catch，任何日志侧故障仅以 warn 日志暴露，绝不向业务传播；
+ * 业务异常原样透传。特别注意：{@code finally} 中的收尾逻辑本身也不得抛出，
+ * 否则会用日志异常顶替业务异常（{@code finishQuietly} 负责兜住这一层）。</p>
  *
  * @author devoracode
  */
@@ -82,16 +84,20 @@ public class OperateLogAspect {
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
 
-    @Around("@annotation(io.github.devoracode.operatelog.annotation.OperateLog)" + " || @within(io.github.devoracode.operatelog.annotation.OperateLog)")
+    @Around("@annotation(io.github.devoracode.operatelog.annotation.OperateLog)")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
-        Method invocationMethod = ((MethodSignature) joinPoint.getSignature()).getMethod();
-        Class<?> targetClass = joinPoint.getTarget() == null ? invocationMethod.getDeclaringClass() : joinPoint.getTarget()
-                                                                                                      .getClass();
+        final Method invocationMethod;
+        final Class<?> targetClass;
         final Method targetMethod;
         final OperateLog annotation;
         try {
+            // 签名与目标类解析同样是日志侧工作：MethodSignature 类型不符等异常
+            // 绝不允许穿透到业务，因此与注解查找一并置于 try 内
+            invocationMethod = ((MethodSignature) joinPoint.getSignature()).getMethod();
+            Object target = joinPoint.getTarget();
+            targetClass = target == null ? invocationMethod.getDeclaringClass() : target.getClass();
             targetMethod = AopUtils.getMostSpecificMethod(invocationMethod, targetClass);
-            annotation = resolveOperateLog(invocationMethod, targetMethod, targetClass);
+            annotation = findOperateLog(invocationMethod, targetMethod, targetClass);
         } catch (Throwable ex) {
             LOGGER.warn("operate-log: annotation lookup failed, logging skipped.", ex);
             return joinPoint.proceed();
@@ -128,40 +134,43 @@ public class OperateLogAspect {
             throw ex;
         } finally {
             try {
-                context.setEndTime(Instant.now());
-                context.setCostTime(Duration.between(context.getStartTime(), context.getEndTime())
-                        .toMillis());
-                handleSafely(context);
+                finishQuietly(context);
             } finally {
                 // 嵌套标注方法场景：恢复外层上下文而非直接清空，防止 ThreadLocal 泄漏与外层丢数据
-                if (previous == null) {
-                    OperateLogContextHolder.unbind();
-                } else {
-                    OperateLogContextHolder.bind(previous);
-                }
+                restorePreviousContext(previous);
             }
         }
     }
 
     /**
-     * 生效注解解析：方法级（含接口查找）与类级默认值逐字段合并。
+     * 日志收尾：计时 → 组装并落地。
      *
-     * <p>仅类级注解在场时直接按类级配置记录；仅方法级在场时原样返回。</p>
+     * <p><b>本方法绝不向外抛出任何异常</b>：它运行在切面 {@code finally} 中，
+     * 逃逸的异常会顶替业务异常（或污染正常返回值），直接违反业务零影响原则。
+     * {@code handleSafely} 内部已自带兜底，这里再包一层是覆盖计时等
+     * 「看似不会失败」的语句，杜绝任何日志侧故障影响业务。</p>
      */
-    private OperateLog resolveOperateLog(Method invocationMethod,
-                                         Method targetMethod,
-                                         Class<?> targetClass) {
-        OperateLog methodLevel = findOperateLog(invocationMethod, targetMethod, targetClass);
-        OperateLog classLevel = targetClass == null ? null : AnnotationUtils.findAnnotation(
-                targetClass,
-                OperateLog.class);
-        if (methodLevel == null) {
-            return classLevel;
+    private void finishQuietly(OperateLogContext context) {
+        try {
+            context.setEndTime(Instant.now());
+            context.setCostTime(Duration.between(context.getStartTime(), context.getEndTime())
+                    .toMillis());
+            handleSafely(context);
+        } catch (Throwable ex) {
+            LOGGER.warn("operate-log: log finalization failed, this record may be lost; "
+                    + "business execution is unaffected.", ex);
         }
-        if (classLevel == null) {
-            return methodLevel;
+    }
+
+    /**
+     * 恢复外层上下文（嵌套标注方法场景）或解绑当前线程上下文。
+     */
+    private void restorePreviousContext(OperateLogContext previous) {
+        if (previous == null) {
+            OperateLogContextHolder.unbind();
+        } else {
+            OperateLogContextHolder.bind(previous);
         }
-        return new MergedOperateLog(classLevel, methodLevel);
     }
 
     /**
@@ -250,6 +259,11 @@ public class OperateLogAspect {
         }
     }
 
+    /**
+     * 采集 HTTP 上下文（业务方法执行前的请求侧信息）。
+     *
+     * <p>解析失败只让 HTTP 相关字段为 {@code null}，不影响业务。</p>
+     */
     private HttpContext resolveHttpContext() {
         try {
             return this.httpContextResolver.resolve();
@@ -288,8 +302,11 @@ public class OperateLogAspect {
         HttpContext httpContext = context.getHttp();
         Throwable error = context.getError();
         String requestHeaders = httpContext == null ? null : this.serializer.serialize(httpContext.getHeaders());
-        String requestBody = annotation.recordRequest() ? this.serializer.serializeArguments(this.payloadPolicy.filterArguments(
-                context.getArguments())) : null;
+        String requestBody = null;
+        if (annotation.recordRequest()) {
+            Object[] requestArguments = this.payloadPolicy.filterArguments(context.getArguments());
+            requestBody = this.serializer.serializeArguments(requestArguments);
+        }
         String responseBody = annotation.recordResponse() ? this.serializer.serialize(context.getResult()) : null;
         if (this.maskEnabled) {
             requestHeaders = this.sensitiveDataMasker.mask(requestHeaders);
@@ -323,7 +340,6 @@ public class OperateLogAspect {
                 .requestHeaders(requestHeaders)
                 .requestBody(requestBody)
                 .responseBody(responseBody)
-                .httpStatus(httpContext == null ? null : httpContext.getStatus())
                 .clientIp(httpContext == null ? null : httpContext.getIp())
                 .userAgent(httpContext == null ? null : httpContext.getUserAgent())
                 .success(context.isSuccess())
@@ -349,93 +365,5 @@ public class OperateLogAspect {
         throwable.printStackTrace(printWriter);
         printWriter.flush();
         return writer.toString();
-    }
-
-    /**
-     * 类级默认值与方法级显式值的合并视图（普通实现类，非 JDK 注解代理）。
-     *
-     * <p>合并规则：方法级字段为「未设置」时继承类级——字符串按空串、type 按
-     * {@link OperateType#OTHER}、recordOn 按 {@link RecordOn#ALWAYS} 判定未设置；
-     * {@code recordRequest} / {@code recordResponse} 布尔字段无未设置态，不参与合并。</p>
-     *
-     * <p>SpEL 中的 {@code #annotation} 变量暴露的即本合并视图，表达式读到的
-     * 属性值与最终落地的日志一致。</p>
-     */
-    private static final class MergedOperateLog implements OperateLog {
-        private final String module;
-        private final String operation;
-        private final OperateType type;
-        private final String description;
-        private final String businessId;
-        private final String condition;
-        private final RecordOn recordOn;
-        private final boolean recordRequest;
-        private final boolean recordResponse;
-
-        private MergedOperateLog(OperateLog classLevel, OperateLog methodLevel) {
-            this.module = pickText(methodLevel.module(), classLevel.module());
-            this.operation = pickText(methodLevel.operation(), classLevel.operation());
-            this.type = methodLevel.type() == OperateType.OTHER ? classLevel.type() : methodLevel.type();
-            this.description = pickText(methodLevel.description(), classLevel.description());
-            this.businessId = pickText(methodLevel.businessId(), classLevel.businessId());
-            this.condition = pickText(methodLevel.condition(), classLevel.condition());
-            this.recordOn = methodLevel.recordOn() == RecordOn.ALWAYS ? classLevel.recordOn() : methodLevel.recordOn();
-            this.recordRequest = methodLevel.recordRequest();
-            this.recordResponse = methodLevel.recordResponse();
-        }
-
-        private static String pickText(String override, String fallback) {
-            return StringUtils.isEmpty(override) ? fallback : override;
-        }
-
-        @Override
-        public String module() {
-            return this.module;
-        }
-
-        @Override
-        public String operation() {
-            return this.operation;
-        }
-
-        @Override
-        public OperateType type() {
-            return this.type;
-        }
-
-        @Override
-        public String description() {
-            return this.description;
-        }
-
-        @Override
-        public String businessId() {
-            return this.businessId;
-        }
-
-        @Override
-        public String condition() {
-            return this.condition;
-        }
-
-        @Override
-        public RecordOn recordOn() {
-            return this.recordOn;
-        }
-
-        @Override
-        public boolean recordRequest() {
-            return this.recordRequest;
-        }
-
-        @Override
-        public boolean recordResponse() {
-            return this.recordResponse;
-        }
-
-        @Override
-        public Class<? extends Annotation> annotationType() {
-            return OperateLog.class;
-        }
     }
 }

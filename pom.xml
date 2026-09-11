@@ -115,7 +115,7 @@
     </build>
 
     <!--
-        profile 说明（详见 RELEASE.md）：
+        profile 说明：
 
         1) boot3-test（按 JDK 自动激活）
            test-boot3 依赖 Boot 3（Java 17 字节码），必须 JDK 17+ 才能编译。
@@ -132,10 +132,11 @@
 
         3) release（-Prelease）
            Maven Central 发布构建：sources + javadoc + GPG 签名 +
-           central-publishing-maven-plugin 上传。仅在打 tag 后由 release.yml 调用。
+           central-publishing-maven-plugin 上传。发布时手动执行：
+             mvn -B clean deploy -Prelease   （需事先配置 GPG 与 Central 凭据）
 
         4) release-check（-Prelease-check）
-           本地 / CI 干跑 release 构建（生成 sources/javadoc、跳过 GPG 与上传），
+           本地干跑 release 构建（生成 sources/javadoc、跳过 GPG 与上传），
            提前暴露 javadoc 严格模式错误，不产生任何网络副作用（依赖已在本地仓库时）。
     -->
     <profiles>

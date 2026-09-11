@@ -25,7 +25,7 @@
         因此这里不再需要「用 dependencyManagement 压制库侧传递版本」的权宜写法；
         jackson / logback / slf4j 一律由 BOM 定版。
         「Starter 不得把 Spring 5 推给 Boot 3 宿主」这一约束不依赖本工程是否 import BOM，
-        由 CI 的 dependency-hygiene 门禁直接对依赖树校验锁定。
+        可直接核对本工程 `mvn -B dependency:tree` 的输出。
     -->
     <dependencyManagement>
         <dependencies>

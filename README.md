@@ -414,16 +414,16 @@ OperateLogAspect @Around 拦截
 - `operate-log-core` 中 Spring 与 SLF4J 为 `optional`（版本只用于 core 自身编译，
   不进消费者依赖图），jackson-databind / aspectjweaver / commons-lang3 保留 compile 传递
   （宿主不必然提供；其版本 == Boot 2.7.18 基线，不会反向压过宿主版本）。
-  于是 Boot 2 宿主解析到 Spring 5.x、Boot 3 宿主解析到 Spring 6.x：宿主框架版本始终由宿主自己定；
-  CI 的 `dependency-hygiene` 作业对三棵真实依赖树做校验锁定。
+  于是 Boot 2 宿主解析到 Spring 5.x、Boot 3 宿主解析到 Spring 6.x：宿主框架版本始终由宿主自己定，
+  可分别用 `mvn -B -pl operate-log-test-boot2,operate-log-test-boot3 dependency:tree` 核对。
 - jakarta 栈编译期使用 Servlet API 5.0.0（Java 8 字节码），运行时兼容 Boot 3 提供的 6.0.0。
 
 ## 支持的版本
 
-| 宿主 | 支持范围 | CI 认证组合 | 说明 |
+| 宿主 | 支持范围 | 验证基线（示例工程所用版本） | 说明 |
 | --- | --- | --- | --- |
-| Spring Boot 2.x | **2.2+ 全 2.x 线** | **2.7.18 × JDK 8 / 17 / 21** | 自动配置经 `spring.factories` 注册（Boot 2 全系一致）；2.0 / 2.1 理论可用（Spring < 5.2 忽略 `proxyBeanMethods` 属性，仅退化为 CGLIB 全代理），未列入认证矩阵；1.x 不支持 |
-| Spring Boot 3.x | **3.0 – 3.5 全 3.x 线** | **3.3.13 × JDK 17 / 21** | `AutoConfiguration.imports` 注册机制自 3.0 起一致；所用 Spring / Jackson / Servlet API 均为跨小版本稳定面 |
+| Spring Boot 2.x | **2.2+ 全 2.x 线** | **Boot 2.7.18**（JDK 8 起，17 / 21 亦可） | 自动配置经 `spring.factories` 注册（Boot 2 全系一致）；2.0 / 2.1 理论可用（Spring < 5.2 忽略 `proxyBeanMethods` 属性，仅退化为 CGLIB 全代理），未列入认证范围；1.x 不支持 |
+| Spring Boot 3.x | **3.0 – 3.5 全 3.x 线** | **Boot 3.3.13**（JDK 17+，由 `boot3-test` profile 自动纳入） | `AutoConfiguration.imports` 注册机制自 3.0 起一致；所用 Spring / Jackson / Servlet API 均为跨小版本稳定面 |
 | Spring Boot 4.x | 未认证 | — | Framework 7 / Jackson 3 默认栈下 `com.fasterxml` `ObjectMapper` 可能缺 Bean，待评估后另行宣布 |
 
 - **JDK**：发布物字节码为 Java 8，任意 Boot 2 宿主 JDK ≥ 8；Boot 3 宿主跟随
@@ -432,8 +432,7 @@ OperateLogAspect @Around 拦截
   均可（仅使用签名一致的 API）。
 - 日志字段与扩展点接口只依赖上述版本区间内稳定的公共 API。
 - 提示：截至 2026-09，Boot 2.x / 3.x 各线在**上游均已 OSS 停止维护**，
-  安全补丁请自行评估（商业延长支持如 HeroDevs NES 可选）。本项目仍会按
-  CI 矩阵持续认证兼容性。
+  安全补丁请自行评估（商业延长支持如 HeroDevs NES 可选）。
 
 ## 已知限制与规划
 

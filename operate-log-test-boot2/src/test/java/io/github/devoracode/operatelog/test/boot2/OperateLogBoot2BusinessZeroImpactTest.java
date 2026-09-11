@@ -5,7 +5,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import io.github.devoracode.operatelog.handler.OperateLogHandler;
-import io.github.devoracode.operatelog.serializer.ForyOperateLogSerializer;
+import io.github.devoracode.operatelog.serializer.DefaultOperateLogSerializer;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -54,7 +54,7 @@ class OperateLogBoot2BusinessZeroImpactTest {
 
         @Bean
         OperateLogSerializer operateLogSerializer() {
-            final OperateLogSerializer delegate = new ForyOperateLogSerializer();
+            final OperateLogSerializer delegate = new DefaultOperateLogSerializer();
             return new OperateLogSerializer() {
                 @Override
                 public String serialize(Object value) {

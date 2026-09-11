@@ -4,19 +4,23 @@ import io.github.devoracode.operatelog.json.ForyJsons;
 import org.apache.fory.json.ForyJson;
 
 /**
- * 基于 Fory JSON 的操作日志序列化器。失败语义：任何序列化异常（getter 抛错、循环引用、
- * 栈溢出等）都被吞掉并降级为占位符——只损失对应字段，不损失整条记录，更不影响业务方法。
+ * 操作日志序列化器的<b>默认实现</b>：用组件自带的 JSON 实现（Apache Fory）把对象写成日志文本。
+ * JSON 库只是日志的一种呈现方式，因此类名不绑定具体实现——需要 Jackson / Gson 或自定义日期格式时，
+ * 注册自己的 {@link OperateLogSerializer} bean 覆盖即可。
+ *
+ * <p>失败语义：任何序列化异常（getter 抛错、循环引用、栈溢出等）都被吞掉并降级为占位符——
+ * 只损失对应字段，不损失整条记录，更不影响业务方法。
  */
-public class ForyOperateLogSerializer implements OperateLogSerializer {
+public class DefaultOperateLogSerializer implements OperateLogSerializer {
     private static final String UNSERIALIZABLE = "<UNSERIALIZABLE>";
 
     private final ForyJson json;
 
-    public ForyOperateLogSerializer() {
+    public DefaultOperateLogSerializer() {
         this(ForyJsons.defaultJson());
     }
 
-    public ForyOperateLogSerializer(ForyJson json) {
+    public DefaultOperateLogSerializer(ForyJson json) {
         this.json = json;
     }
 

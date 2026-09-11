@@ -58,7 +58,7 @@ Boot 2.x 与 3.x 使用同一坐标（Starter 本体为 Java 8 字节码；Boot 
 </dependency>
 ```
 
-> 无额外要求：JSON 由组件自带的 Apache Fory 完成，宿主不需要提供 `ObjectMapper` Bean 或任何 Jackson 坐标。
+> 无额外要求：日志里的 JSON 由组件自带的实现完成（当前基于 Apache Fory），宿主不需要提供 `ObjectMapper` Bean 或任何 Jackson 坐标。
 > 非 Web 环境（定时任务、后台服务）也能工作：HTTP 相关字段自动降级为 `null`。
 
 ### 2. 标注注解
@@ -284,7 +284,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 ## 敏感数据脱敏
 
 - 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段。
-- 实现为 **JSON 树递归**（Fory 的 `JsonObject` / `JsonArray`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层。
+- 实现为 **JSON 树递归**（`JsonObject` / `JsonArray`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层。
 - 一个敏感字段都没命中时返回原文，不做无谓的重写（避免数字与格式漂移）。
 - 字段名匹配**忽略大小写**（`Password` / `PASSWORD` / `password` 均脱敏）。
 - 命中字段的值替换为 `mask-text`（默认 `******`）。
@@ -301,8 +301,8 @@ Filter → DispatcherServlet → Interceptor#preHandle
 | `OperatorResolver` | 匿名（返回 `null`） | 对接登录态，提供 `userId` / `userAccount` / `userName` |
 | `HttpContextResolver` | Starter 内置（`javax` / `jakarta` 自动选择） | 定制 HTTP 上下文采集（如接入非 Servlet 容器） |
 | `ClientIpResolver` | Starter 内置（含 `trust-proxy` 逻辑） | 定制客户端 IP 解析策略 |
-| `OperateLogSerializer` | `ForyOperateLogSerializer`（组件自带 Fory JSON，不用宿主 `ObjectMapper`） | 更换序列化器（如 Jackson、Gson、自定义日期格式） |
-| `SensitiveDataMasker` | `ForySensitiveDataMasker` | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
+| `OperateLogSerializer` | `DefaultOperateLogSerializer`（组件自带的 JSON 实现，不用宿主 `ObjectMapper`） | 更换序列化器（如 Jackson、Gson、自定义日期格式） |
+| `SensitiveDataMasker` | `DefaultSensitiveDataMasker`（JSON 树递归替换） | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
 | `SpelEngine` | `DefaultSpelEngine`（LRU 表达式缓存，支持 `enabled` 直通降级） | 定制表达式引擎（如增加自定义函数） |
 | `PayloadPolicy` | 按 `operate-log.payload.*` 组装 | 定制载荷防护（自定义截断 / 忽略类型逻辑，注册 Bean 即覆盖） |
 
@@ -340,7 +340,7 @@ public OperateLogHandler operateLogHandler(OperateLogJdbcRepository repository) 
 @Bean
 public SensitiveDataMasker operateLogSensitiveDataMasker() {
     Set<String> fields = new HashSet<String>(Arrays.asList("mobile", "phone"));
-    SensitiveDataMasker base = new ForySensitiveDataMasker(fields, null);
+    SensitiveDataMasker base = new DefaultSensitiveDataMasker(fields, null);
     return json -> postProcess(base.mask(json)); // 在默认脱敏基础上追加自定义规则
 }
 ```
@@ -419,24 +419,6 @@ OperateLogAspect @Around 拦截
   于是 Boot 2 宿主解析到 Spring 5.x、Boot 3 宿主解析到 Spring 6.x：宿主框架版本始终由宿主自己定，
   可分别用 `mvn -B -pl operate-log-test-boot2,operate-log-test-boot3 dependency:tree` 核对。
 - jakarta 栈编译期使用 Servlet API 5.0.0（Java 8 字节码），运行时兼容 Boot 3 提供的 6.0.0。
-
-## JSON 实现（Apache Fory）
-
-日志里的 JSON（`requestBody` / `responseBody` / `requestHeaders` / 记录本身）由 **Apache Fory JSON**
-（`org.apache.fory:fory-json`，1.7.1，支持 JDK 8+）生成，不经宿主 Jackson。
-这样 Boot 2（Jackson 2）、Boot 3（Jackson 2）、Boot 4（Jackson 3，包名已改为 `tools.jackson`）
-拿到的日志格式完全一致，也不会因宿主缺 `com.fasterxml` 的 `ObjectMapper` Bean 而装配失败。
-
-与宿主 Web 层输出的差异需要知道：
-
-- **不读 Jackson 注解**：`@JsonIgnore` / `@JsonProperty` / 命名策略 / 自定义 Module 对日志无效
-  （Fory 用自己的 `org.apache.fory.json.annotation`）。需要同样效果时自定义 `OperateLogSerializer` bean。
-- **属性集合更宽**：Fory 默认把类层级中的非静态字段（含私有）与 public getter 合并成属性，
-  因此比 Jackson 的默认可见性多记一些字段。
-- **时间形态**：`java.time` 走 ISO 文本，`java.util.Date` / `Calendar` 走 epoch 毫秒。
-- **空值仍输出**：记录里未赋值的字段以 `null` 出现（`writeNullFields(true)`），下游 schema 不随内容抖动。
-- **JDK 25+**：若禁用了 `sun.misc.Unsafe`，按 Fory 文档加
-  `--add-opens=java.base/java.lang.invoke=ALL-UNNAMED`。
 
 ## 支持的版本
 

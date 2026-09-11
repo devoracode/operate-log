@@ -13,9 +13,9 @@ import io.github.devoracode.operatelog.resolver.AnonymousOperatorResolver;
 import io.github.devoracode.operatelog.resolver.ClientIpResolver;
 import io.github.devoracode.operatelog.resolver.HttpContextResolver;
 import io.github.devoracode.operatelog.resolver.OperatorResolver;
-import io.github.devoracode.operatelog.sanitizer.ForySensitiveDataMasker;
+import io.github.devoracode.operatelog.sanitizer.DefaultSensitiveDataMasker;
 import io.github.devoracode.operatelog.sanitizer.SensitiveDataMasker;
-import io.github.devoracode.operatelog.serializer.ForyOperateLogSerializer;
+import io.github.devoracode.operatelog.serializer.DefaultOperateLogSerializer;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import io.github.devoracode.operatelog.spel.DefaultSpelEngine;
 import io.github.devoracode.operatelog.spel.SpelEngine;
@@ -66,18 +66,18 @@ public class OperateLogAutoConfiguration {
             return new AnonymousOperatorResolver();
         }
 
-        /** 默认序列化器：用组件自带的 Fory JSON，不依赖宿主 Jackson（Boot 4 已换成 Jackson 3）。 */
+        /** 默认序列化器：用组件自带的 JSON 实现，不依赖宿主 Jackson（Boot 4 已换成 Jackson 3）。 */
         @Bean
         @ConditionalOnMissingBean(OperateLogSerializer.class)
         public OperateLogSerializer operateLogSerializer() {
-            return new ForyOperateLogSerializer();
+            return new DefaultOperateLogSerializer();
         }
 
-        /** 基于 Fory JSON 动态树的脱敏器：只替换命中字段名的值。 */
+        /** 默认脱敏器：在组件自带 JSON 实现的动态树上只替换命中字段名的值。 */
         @Bean
         @ConditionalOnMissingBean(SensitiveDataMasker.class)
         public SensitiveDataMasker operateLogSensitiveDataMasker(OperateLogProperties properties) {
-            return new ForySensitiveDataMasker(properties.getMask().getFields(),
+            return new DefaultSensitiveDataMasker(properties.getMask().getFields(),
                     properties.getMask().getMaskText());
         }
 

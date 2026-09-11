@@ -3,11 +3,7 @@ package io.github.devoracode.operatelog.test.boot3;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-/**
- * Spring Boot 3 测试应用。
- *
- * @author devoracode
- */
+/** Boot 3 测试应用入口。 */
 @SpringBootApplication
 public class OperateLogBoot3TestApplication {
 

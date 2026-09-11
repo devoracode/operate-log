@@ -11,13 +11,19 @@
 
     <artifactId>operate-log-test-boot3</artifactId>
 
+    <name>operate-log-test-boot3</name>
+    <description>Boot 3.x 冒烟示例（jakarta 栈），不参与发布与二进制兼容检查。</description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <japicmp.skip>true</japicmp.skip>
+    </properties>
+
     <!--
-        导入 Boot 3 BOM 是必须项（修复既有隐患）：
-        operate-log-core 以 compile 传递 Spring 5.3.32，与 starter-web 路径的 Spring 6.1.16
-        在依赖树中同深度，按 Maven「同深度先声明优先」规则 5.3.32 会胜出，
-        导致 Boot 3 运行时 Spring 版本混杂而崩溃。
-        dependencyManagement 优先于传递依赖调解，可将 core 传递的
-        spring-core/aop/context/expression、jackson 统一强制为 Boot 3.3.13 管理的版本。
+        import Boot 3 BOM 与真实 Boot 3 应用一致：jackson / logback / slf4j 全部由 BOM 定版。
+        core 的 spring-* / slf4j-api 是 optional，不会以 Spring 5.x 参与调解，因此这里无需
+        任何「压制库侧传递版本」的写法；组件自带 fory-json，与宿主自身的 Jackson 无关；「库不得把 Spring 5 推给 Boot 3 宿主」可直接用
+        mvn -B dependency:tree 的输出核对。
     -->
     <dependencyManagement>
         <dependencies>

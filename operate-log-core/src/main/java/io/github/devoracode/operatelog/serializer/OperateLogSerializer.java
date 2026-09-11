@@ -1,28 +1,13 @@
 package io.github.devoracode.operatelog.serializer;
 
-/**
- * 操作日志序列化器。
- *
- * @author devoracode
- */
+/** 操作日志序列化器：把入参 / 返回值等对象转成日志中的字符串。 */
 public interface OperateLogSerializer {
 
-    /**
-     * 序列化对象。
-     *
-     * @param value 对象
-     * @return 序列化结果
-     */
     String serialize(Object value);
 
     /**
-     * 序列化方法参数数组。
-     *
-     * <p>默认实现直接委托 {@link #serialize(Object)}；实现方可覆写本方法，
-     * 提供「整数组失败 → 逐元素降级」的能力，避免单个坏参数拖垮整条日志。</p>
-     *
-     * @param arguments 方法参数数组
-     * @return 序列化结果
+     * 序列化方法参数数组。默认委托 {@link #serialize(Object)}；
+     * 覆写可实现「整数组失败 → 逐元素降级」，避免单个坏参数拖垮整条日志。
      */
     default String serializeArguments(Object[] arguments) {
         return serialize(arguments);

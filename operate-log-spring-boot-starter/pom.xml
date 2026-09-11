@@ -11,18 +11,16 @@
 
     <artifactId>operate-log-spring-boot-starter</artifactId>
 
+    <name>operate-log-spring-boot-starter</name>
     <description>
         Spring Boot 2.x / 3.x 双栈操作日志 Starter。
-        编译基线为 JDK 8（依赖 Boot 2.7.18 / Spring 5.3.32 / Servlet API 4.0 + 5.0，均为 Java 8 字节码），
+        编译基线为 JDK 8（依赖 Boot 2.7.18 / Spring 5.3.31 / Servlet API 4.0 + 5.0，均为 Java 8 字节码），
         运行时按宿主 classpath 自动选择 javax 或 jakarta Servlet 实现。
     </description>
 
     <dependencyManagement>
         <dependencies>
-            <!--
-                仅用于编译期定版（spring-boot-autoconfigure 等）。
-                该 BOM 不会传递给宿主：下方所有 Boot/Spring 相关依赖均为 provided。
-            -->
+            <!-- 仅编译期定版：本模块 Boot / Spring 依赖全为 provided，该 BOM 不会传给宿主。 -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -34,17 +32,18 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- 唯一 compile 依赖：核心载荷（顺带传递 jackson / aspectjweaver / commons-lang3 / slf4j） -->
+        <!--
+            唯一 compile 依赖：core 传递 fory-json / aspectjweaver / commons-lang3
+            （硬运行时依赖，跨 Boot 2/3/4 通用）；Spring 与 SLF4J 在 core 里已是 optional，
+            不会把 Boot 2 时代的版本污染给宿主。
+        -->
         <dependency>
             <groupId>io.github.devoracode</groupId>
             <artifactId>operate-log-core</artifactId>
             <version>${project.version}</version>
         </dependency>
 
-        <!--
-            以下依赖全部 provided：只在编译期需要，运行时由宿主自带，
-            绝不把 2.7 版本的坐标传递给 Boot 3 宿主。
-        -->
+        <!-- 以下依赖全部 provided：只在编译期需要，运行时由宿主自带，不传递 2.7 坐标。 -->
 
         <!-- 自动配置注解（@Configuration / @ConditionalOnXxx），Boot 2.7.18 与 3.x 包名签名一致 -->
         <dependency>
@@ -54,10 +53,17 @@
         </dependency>
 
         <!--
-            编译期注解处理器：扫描 @ConfigurationProperties 生成
-            spring-configuration-metadata.json，为宿主 IDE 提供 operate-log.* 配置自动补全与文档提示。
-            provided 且不向宿主传递，不参与运行时。
+            源码直接用 @Configuration / @Bean，而 core 不再传递 Spring 坐标，故自备编译期版本；
+            provided 不向宿主传递，其自身传递依赖同样只在编译与测试期可见。
         -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <version>${spring.framework.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- 生成 spring-configuration-metadata.json，让宿主 IDE 补全 operate-log.* 配置。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
@@ -81,9 +87,8 @@
         </dependency>
 
         <!--
-            jakarta 栈（Boot 3.x）编译期 Servlet API。
-            选 5.0.0 而非 6.0.0：5.0.0 是 Java 8 字节码，JDK 8 可编译；
-            Boot 3 宿主运行时实际提供 6.0.0，resolver 只使用两版本签名一致的 API，二进制兼容。
+            jakarta 栈编译期 Servlet API。选 5.0.0 而非 6.0.0：5.0.0 是 Java 8 字节码，JDK 8
+            可编译；Boot 3 宿主运行时提供 6.0.0，实现只用两者签名一致的 API，二进制兼容。
         -->
         <dependency>
             <groupId>jakarta.servlet</groupId>
@@ -98,6 +103,8 @@
             <version>${lombok.version}</version>
             <scope>provided</scope>
         </dependency>
+
+        <!-- 本模块不含单元测试：装配与运行行为在 operate-log-test-boot2 / -boot3 里用真实容器验证。 -->
     </dependencies>
 
     <build>

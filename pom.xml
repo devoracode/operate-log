@@ -20,28 +20,29 @@
         </license>
     </licenses>
 
+    <developers>
+        <developer>
+            <id>devoracode</id>
+            <name>devoracode</name>
+            <url>https://github.com/devoracode</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/devoracode/operate-log</url>
+        <connection>scm:git:https://github.com/devoracode/operate-log.git</connection>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/devoracode/operate-log/issues</url>
+    </issueManagement>
+
     <modules>
         <module>operate-log-core</module>
         <module>operate-log-spring-boot-starter</module>
         <module>operate-log-test-boot2</module>
     </modules>
-
-    <!--
-        test-boot3 依赖 Boot 3（Java 17 字节码），必须 JDK 17+ 才能编译。
-        放入按 JDK 版本自动激活的 profile：JDK 8 构建环境自动跳过，
-        JDK 17+ 构建环境自动包含，保证「JDK 8 可全量构建」与「Boot 3 可验证」兼得。
-    -->
-    <profiles>
-        <profile>
-            <id>boot3-test</id>
-            <activation>
-                <jdk>[17,)</jdk>
-            </activation>
-            <modules>
-                <module>operate-log-test-boot3</module>
-            </modules>
-        </profile>
-    </profiles>
 
     <properties>
         <java.version>8</java.version>
@@ -50,14 +51,45 @@
 
         <spring.boot2.version>2.7.18</spring.boot2.version>
         <spring.boot3.version>3.3.13</spring.boot3.version>
-        <spring.framework.version>5.3.32</spring.framework.version>
-        <jackson.version>2.15.4</jackson.version>
+        <!--
+            这些版本既是 core / starter 的编译基线，也是 core 非 optional 传递依赖
+            （aspectjweaver / commons-lang3）向消费者声明的下界。
+            纪律：下界必须 == Boot 2.7.18 管理的版本，不得更高——消费者把 Starter 写在
+            spring-boot-starter-web 之前时我方版本会胜出（同深度先声明优先），高于宿主基线
+            就会出现混版。Boot 3 宿主由 BOM 统一上调。
+            fory-json 不在任何 Boot BOM 内，由本组件定版（宿主可用自身 dependencyManagement 覆盖）；
+            组件不自带 Jackson，因此宿主用 Jackson 2 还是 Jackson 3（Boot 4）都不影响本组件。
+        -->
+        <spring.framework.version>5.3.31</spring.framework.version>
+        <fory.version>1.7.1</fory.version>
         <aspectj.version>1.9.7</aspectj.version>
-        <commons-lang3.version>3.14.0</commons-lang3.version>
+        <commons-lang3.version>3.12.0</commons-lang3.version>
         <slf4j.version>1.7.36</slf4j.version>
         <lombok.version>1.18.30</lombok.version>
+
+        <junit.version>5.8.2</junit.version>
+
         <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+        <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
+
+        <japicmp.version>0.26.2</japicmp.version>
+        <japicmp.skip>false</japicmp.skip>
+        <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
+        <maven.javadoc.plugin.version>3.6.3</maven.javadoc.plugin.version>
+        <maven.gpg.plugin.version>3.2.4</maven.gpg.plugin.version>
+        <central.publishing.plugin.version>0.11.0</central.publishing.plugin.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
         <pluginManagement>
@@ -71,7 +103,196 @@
                         <parameters>${maven.compiler.parameters}</parameters>
                     </configuration>
                 </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven.surefire.plugin.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
     </build>
+
+    <!--
+        1) boot3-test：JDK 17+ 自动激活，把 test-boot3 纳入构建（Boot 3 是 Java 17 字节码，
+           JDK 8 下无法编译），从而「JDK 8 全量构建」与「Boot 3 可验证」兼得。
+        2) api-compat：传 -Djapicmp.oldVersion=X.Y.Z 即激活，二进制不兼容直接 fail；
+           首版本无基线时由 ignoreMissingOldVersion 放行。只对发布物执行：
+             mvn -B -pl operate-log-core,operate-log-spring-boot-starter verify -Djapicmp.oldVersion=1.0.0
+        3) release：Central 发布（sources + javadoc + GPG + 上传）：
+             mvn -B clean deploy -Prelease    （需配置 GPG 与 Central 凭据）
+        4) release-check：本地干跑发布构建，提前暴露 javadoc 严格模式错误，不上传。
+    -->
+    <profiles>
+        <profile>
+            <id>boot3-test</id>
+            <activation>
+                <jdk>[17,)</jdk>
+            </activation>
+            <modules>
+                <module>operate-log-test-boot3</module>
+            </modules>
+        </profile>
+
+        <profile>
+            <id>api-compat</id>
+            <activation>
+                <property>
+                    <name>japicmp.oldVersion</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.github.siom79.japicmp</groupId>
+                        <artifactId>japicmp-maven-plugin</artifactId>
+                        <version>${japicmp.version}</version>
+                        <configuration>
+                            <oldVersion>
+                                <dependency>
+                                    <groupId>${project.groupId}</groupId>
+                                    <artifactId>${project.artifactId}</artifactId>
+                                    <version>${japicmp.oldVersion}</version>
+                                    <type>jar</type>
+                                </dependency>
+                            </oldVersion>
+                            <newVersion>
+                                <file>
+                                    <path>${project.build.directory}/${project.build.finalName}.jar</path>
+                                </file>
+                            </newVersion>
+                            <parameter>
+                                <skip>${japicmp.skip}</skip>
+                                <onlyModified>true</onlyModified>
+                                <onlyBinaryIncompatibleModified>true</onlyBinaryIncompatibleModified>
+                                <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
+                                <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
+                                <breakBuildOnPartialBuild>false</breakBuildOnPartialBuild>
+                            </parameter>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>api-compat</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>cmp</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${maven.source.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${maven.javadoc.plugin.version}</version>
+                        <configuration>
+                            <encoding>${project.build.sourceEncoding}</encoding>
+                            <charset>${project.build.sourceEncoding}</charset>
+                            <doclint>none</doclint>
+                            <detectOfflineLinks>false</detectOfflineLinks>
+                            <quiet>true</quiet>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${maven.gpg.plugin.version}</version>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${central.publishing.plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>release-check</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${maven.source.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${maven.javadoc.plugin.version}</version>
+                        <configuration>
+                            <encoding>${project.build.sourceEncoding}</encoding>
+                            <charset>${project.build.sourceEncoding}</charset>
+                            <doclint>none</doclint>
+                            <detectOfflineLinks>false</detectOfflineLinks>
+                            <quiet>true</quiet>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

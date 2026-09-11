@@ -9,9 +9,7 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * 操作日志记录。
- *
- * @author devoracode
+ * 操作日志记录：一条审计数据的完整字段集合，由 Handler 落地前序列化输出。
  */
 @Data
 @Builder
@@ -48,9 +46,8 @@ public class OperateLogRecord {
     private String errorMessage;
     private String errorStack;
     /**
-     * 业务自定义字段。在业务方法内经
-     * {@link io.github.devoracode.operatelog.context.OperateLogContextHolder#putExtra(String, Object)}
-     * 写入；未写入时为 {@code null}（与其余可空字段一致，保持下游 schema 稳定）。
+     * 业务自定义字段，经 {@code OperateLogContextHolder#putExtra} 写入；
+     * 未写入时为 {@code null}，与其余可空字段一致（下游 schema 稳定）。
      */
     private Map<String, Object> extra;
 }

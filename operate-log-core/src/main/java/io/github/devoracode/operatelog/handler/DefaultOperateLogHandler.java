@@ -7,11 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * 默认操作日志处理器，将日志输出到 SLF4J。
- *
- * @author devoracode
- */
+/** 默认处理器：以单行 JSON 输出到 SLF4J。 */
 @RequiredArgsConstructor
 public class DefaultOperateLogHandler implements OperateLogHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultOperateLogHandler.class);

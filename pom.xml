@@ -52,15 +52,11 @@
         <spring.boot2.version>2.7.18</spring.boot2.version>
         <spring.boot3.version>3.3.13</spring.boot3.version>
         <!--
-            以下版本是 core / starter 的「编译基线」，同时也是 core 非 optional 传递依赖
-            （jackson-databind / aspectjweaver / commons-lang3）向消费者声明的**下界**。
-
-            纪律：下界必须 == Boot 2.7.18 所管理的版本，不得更高。
-            原因：消费者若把本 Starter 写在 spring-boot-starter-web 之前（常见写法），
-            Maven「同深度先声明优先」会让我方版本胜出；一旦我方版本高于宿主基线，
-            就会出现 jackson-databind 新、jackson-core/annotations 旧的**混版**（NoSuchMethodError 风险）。
-            Boot 3 宿主则由 BOM 统一上调（Jackson 2.x 线内二进制兼容，上调安全）。
-            Spring 与 SLF4J 已在 core 中标 optional，不再参与该调解。
+            这些版本既是 core / starter 的编译基线，也是 core 非 optional 传递依赖
+            （jackson-databind / aspectjweaver / commons-lang3）向消费者声明的下界。
+            纪律：下界必须 == Boot 2.7.18 管理的版本，不得更高——消费者把 Starter 写在
+            spring-boot-starter-web 之前时我方版本会胜出（同深度先声明优先），高于宿主基线
+            就会出现 databind 新、core / annotations 旧的混版。Boot 3 宿主由 BOM 统一上调。
         -->
         <spring.framework.version>5.3.31</spring.framework.version>
         <jackson.version>2.13.5</jackson.version>
@@ -115,29 +111,14 @@
     </build>
 
     <!--
-        profile 说明：
-
-        1) boot3-test（按 JDK 自动激活）
-           test-boot3 依赖 Boot 3（Java 17 字节码），必须 JDK 17+ 才能编译。
-           JDK 8 构建自动跳过，JDK 17+ 自动包含，
-           保证「JDK 8 可全量构建」与「Boot 3 可验证」兼得。
-
-        2) api-compat（-Djapicmp.oldVersion=X.Y.Z 时自动激活）
-           japicmp 二进制兼容门禁：Starter 类库小版本升级必须对下游二进制兼容，
-           检测到不兼容修改直接 fail 构建。基线 jar 从 Maven Central 解析，
-           首版本（尚无基线）由 ignoreMissingOldVersion 放行不阻塞。
-           只应针对发布物执行：
-             mvn -B -pl operate-log-core,operate-log-spring-boot-starter \
-                 verify -Djapicmp.oldVersion=1.0.0
-
-        3) release（-Prelease）
-           Maven Central 发布构建：sources + javadoc + GPG 签名 +
-           central-publishing-maven-plugin 上传。发布时手动执行：
-             mvn -B clean deploy -Prelease   （需事先配置 GPG 与 Central 凭据）
-
-        4) release-check（-Prelease-check）
-           本地干跑 release 构建（生成 sources/javadoc、跳过 GPG 与上传），
-           提前暴露 javadoc 严格模式错误，不产生任何网络副作用（依赖已在本地仓库时）。
+        1) boot3-test：JDK 17+ 自动激活，把 test-boot3 纳入构建（Boot 3 是 Java 17 字节码，
+           JDK 8 下无法编译），从而「JDK 8 全量构建」与「Boot 3 可验证」兼得。
+        2) api-compat：传 -Djapicmp.oldVersion=X.Y.Z 即激活，二进制不兼容直接 fail；
+           首版本无基线时由 ignoreMissingOldVersion 放行。只对发布物执行：
+             mvn -B -pl operate-log-core,operate-log-spring-boot-starter verify -Djapicmp.oldVersion=1.0.0
+        3) release：Central 发布（sources + javadoc + GPG + 上传）：
+             mvn -B clean deploy -Prelease    （需配置 GPG 与 Central 凭据）
+        4) release-check：本地干跑发布构建，提前暴露 javadoc 严格模式错误，不上传。
     -->
     <profiles>
         <profile>

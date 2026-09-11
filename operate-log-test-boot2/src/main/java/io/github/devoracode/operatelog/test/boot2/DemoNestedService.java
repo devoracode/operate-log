@@ -8,10 +8,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 嵌套标注调用链的内层服务：被 {@link DemoController#nested(String)} 经 Spring 代理调用，
- * 用于验证「内层记录落地后外层上下文被恢复、{@code extra} 不互相污染」。
- *
- * @author devoracode
+ * 嵌套调用链的内层服务：由 {@link DemoController#nested(String)} 经 Spring 代理调用，
+ * 用于验证内层记录落地后外层上下文被恢复、{@code extra} 互不污染。
  */
 @Service
 public class DemoNestedService {

@@ -30,19 +30,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * Boot 2.x（javax 栈）端到端主用例：经完整 Spring MVC + AOP 链路，
- * 断言 {@link DefaultOperateLogHandler} 落地的 JSON 日志字段。
+ * Boot 2.x（javax 栈）端到端主用例：走完整 Spring MVC + AOP 链路，断言
+ * {@link DefaultOperateLogHandler} 落地的 JSON 字段——注解语义、SpEL 及降级、脱敏、
+ * 载荷防护（截断 / 忽略类型 / 坏元素）、嵌套上下文隔离、traceId 兜底、HTTP 采集与 trust-proxy。
  *
- * <p>core / starter 不再保留单元测试，本类与同模块其余用例共同承担：
- * 注解语义、SpEL（含降级）、脱敏（嵌套 + 大小写）、载荷防护（截断 + 忽略类型 + 坏元素）、
- * 嵌套上下文隔离、traceId 兜底、HTTP 请求侧采集与 {@code trust-proxy} 语义。</p>
- *
- * <p>断言通道：向 handler 的 logback logger 挂 {@link ListAppender}，解析
- * {@code operate-log=} 前缀行——比抓 stdout 稳定，且不引入额外依赖。</p>
- *
- * <p>用例与 Boot 3 测试工程逐条对称：同一份 Starter 产物在两栈下的行为必须一致。</p>
- *
- * @author devoracode
+ * <p>断言通道：给 handler 的 logback logger 挂 {@link ListAppender}，解析 {@code operate-log=}
+ * 前缀行。用例与 Boot 3 测试工程逐条对称：同一份 Starter 产物在两栈下行为必须一致。</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -118,8 +111,7 @@ class OperateLogBoot2MockMvcTest {
         assertNotNull(record.get("traceId").asText());
         assertEquals("operate-log-test", record.get("application").asText());
         assertEquals("test", record.get("environment").asText());
-        // 本组件不提供 HTTP 状态码（见 HttpContextResolver 的取舍说明）：字段必须整体缺席，
-        // 而不是「存在但为 null」——留着易被误读成最终状态码的空字段比没有更糟
+        // 不提供 HTTP 状态码（取舍见 HttpContextResolver）：字段必须整体缺席，而非「存在但为 null」
         assertFalse(record.has("httpStatus"), "httpStatus 已从日志模型中移除: " + record);
     }
 
@@ -177,13 +169,11 @@ class OperateLogBoot2MockMvcTest {
 
     @Test
     void errorPathRecordedWithStack() throws Exception {
-        // MockMvc 下未捕获的业务异常可能穿透 perform(...)，也可能以 500 收口，
-        // 两种形态都接受：日志在切面 finally 中先行落地，与此无关
+        // 未捕获异常可能穿透 perform(...)，也可能以 500 收口，两种形态都接受（日志先行落地）
         try {
             this.mockMvc.perform(get("/demo/fail"));
         } catch (Exception expected) {
-            // IllegalStateException 经 Servlet 容器包装上抛——预期行为，
-            // 日志侧收尾绝不允许顶替它（Business Zero Impact 的断言见 ZeroImpact 用例）
+            // 容器包装上抛属预期；日志侧收尾不得顶替它（对照见 ZeroImpact 用例）
         }
 
         JsonNode record = lastRecord();
@@ -199,8 +189,7 @@ class OperateLogBoot2MockMvcTest {
 
     @Test
     void successPathWithRecordOnSuccessEmitsSingleRecord() throws Exception {
-        // /demo（recordOn=SUCCESS）正常返回时记录；此处仅断言「一次调用一条记录」，
-        // 与 errorPathRecordedWithStack 的「恰好一条」共同钉死记录时机过滤
+        // recordOn=SUCCESS：正常返回记一条，与 errorPath 用例的「恰好一条」一起钉死时机过滤
         this.mockMvc.perform(post("/demo").contentType(MediaType.APPLICATION_JSON).content("{\"a\":1}"));
         assertEquals(1, countRecords());
     }
@@ -300,7 +289,7 @@ class OperateLogBoot2MockMvcTest {
         String responseBody = record.get("responseBody").asText();
         assertTrue(requestBody.length() <= MAX_PAYLOAD_LENGTH,
                 "requestBody 长度 " + requestBody.length() + " 超过上限 " + MAX_PAYLOAD_LENGTH);
-        // 上限含截断标记：结果长度恰好等于上限并带标记（修复前为「上限 + 标记长度」）
+        // 上限含截断标记：结果长度恰好等于上限并带标记
         assertEquals(MAX_PAYLOAD_LENGTH, responseBody.length());
         assertTrue(responseBody.endsWith(TRUNCATED_SUFFIX), responseBody);
     }

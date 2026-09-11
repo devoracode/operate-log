@@ -11,11 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * 基于 Jackson JSON 树的敏感数据脱敏器。
- *
- * @author devoracode
- */
+/** 基于 Jackson JSON 树的敏感数据脱敏器：只替换命名字段的值，不改结构。 */
 public class JacksonSensitiveDataMasker implements SensitiveDataMasker {
 
     private final ObjectMapper objectMapper;

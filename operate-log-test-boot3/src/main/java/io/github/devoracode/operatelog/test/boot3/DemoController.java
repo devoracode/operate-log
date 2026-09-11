@@ -17,16 +17,9 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 操作日志测试 Controller（Boot 3.x / jakarta 栈）。
- *
- * <p>{@code @OperateLog} 仅支持方法级标注，因此这里逐个端点显式标注；
- * 每个端点只为一件待断言的行为服务，注释写明「锁住什么」，
- * 与 boot2 模块的同名类逐条对称——同一份 Starter 产物在两栈下行为必须一致。</p>
- *
- * <p>本模块不写「单元测试」：core / starter 的可观测行为一律在这里用真实
- * Spring MVC + AOP 链路验证，与另一栈的测试工程逐条对称。</p>
- *
- * @author devoracode
+ * 操作日志测试 Controller（Boot 3.x / jakarta 栈）。每个端点只为一条待断言的行为服务，
+ * 与 boot2 模块的同名类逐条对称——同一份 Starter 产物在两栈下行为必须一致。
+ * core / starter 的可观测行为都在这里用真实 Spring MVC + AOP 链路验证，不另写单元测试。
  */
 @RestController
 @RequestMapping("/demo")
@@ -37,10 +30,7 @@ public class DemoController {
         this.nestedService = nestedService;
     }
 
-    /**
-     * 基础路径：SpEL 模板 {@code #{...}} 混排字面量、{@code businessId} 取参数名、
-     * {@code extra} 自定义字段通道、{@code recordRequest=true} / {@code recordResponse=false}。
-     */
+    /** 基础路径：SpEL 模板混排字面量、{@code businessId} 按参数名取值、{@code extra} 通道、只记请求不记响应。 */
     @OperateLog(
             module = "demo",
             operation = "query",
@@ -57,10 +47,7 @@ public class DemoController {
         return result;
     }
 
-    /**
-     * 请求体与响应体双侧脱敏（含嵌套对象、大小写变体由测试用例的 JSON 覆盖）；
-     * {@code recordOn=SUCCESS}：本方法正常返回必须记录。
-     */
+    /** 请求 / 响应双侧脱敏（嵌套对象、大小写变体见用例）；{@code recordOn=SUCCESS} 正常返回必须记录。 */
     @OperateLog(
             module = "demo",
             operation = "create",
@@ -74,9 +61,7 @@ public class DemoController {
         return body;
     }
 
-    /**
-     * 异常路径：{@code recordOn=ERROR} 只在抛异常时记录，并产出 errorType / errorMessage / errorStack。
-     */
+    /** 异常路径：{@code recordOn=ERROR} 只在抛异常时记录，产出 errorType / errorMessage / errorStack。 */
     @OperateLog(module = "demo", operation = "fail", type = OperateType.OTHER, recordOn = RecordOn.ERROR)
     @GetMapping("/fail")
     public Map<String, Object> fail() {
@@ -84,9 +69,8 @@ public class DemoController {
     }
 
     /**
-     * 载荷忽略类型：{@code HttpServletRequest} 参数命中 {@code payload.ignore-types}
-     * （接口命中即算，见内置默认列表），必须以 {@code <IGNORED:类型简名>} 占位入日志，
-     * 绝不被序列化（否则要么巨量内容、要么直接失败）。
+     * {@code HttpServletRequest} 参数命中 {@code payload.ignore-types}（接口命中即算），
+     * 必须以 {@code <IGNORED:类型简名>} 占位，绝不参与序列化。
      */
     @OperateLog(module = "demo", operation = "ignore-args")
     @GetMapping("/ignore-args")
@@ -97,11 +81,7 @@ public class DemoController {
         return result;
     }
 
-    /**
-     * SpEL 变量面与降级：{@code #result}（业务返回值）、{@code #p0}（位置参数）、
-     * {@code #annotation}（生效注解）、{@code #costTime}（切面在收尾前已写入）；
-     * 同时用不存在的变量名验证「表达式失败只降级不抛」。
-     */
+    /** SpEL 变量面：{@code #result}、{@code #p0}、{@code #annotation}、{@code #costTime}。 */
     @OperateLog(
             module = "demo",
             operation = "spel",
@@ -115,10 +95,7 @@ public class DemoController {
         return result;
     }
 
-    /**
-     * SpEL 求值失败降级：{@code businessId} 指向不存在的变量 → 记 {@code null}；
-     * {@code description} 模板坏语法 → 输出原文；业务与日志都不得因此失败。
-     */
+    /** 表达式失败只降级不抛：{@code businessId} 记 {@code null}，{@code description} 输出原文。 */
     @OperateLog(
             module = "demo",
             operation = "spel-broken",
@@ -131,9 +108,7 @@ public class DemoController {
         return result;
     }
 
-    /**
-     * {@code condition} 短路：{@code #tag == 'skip'} 时整条日志不产出（成本最低的过滤位）。
-     */
+    /** {@code condition} 短路：{@code #tag == 'skip'} 时整条日志不产出。 */
     @OperateLog(module = "demo", operation = "conditional", condition = "#tag != 'skip'")
     @GetMapping("/conditional")
     public Map<String, Object> conditional(@RequestParam(defaultValue = "go") String tag) {
@@ -142,10 +117,7 @@ public class DemoController {
         return result;
     }
 
-    /**
-     * 嵌套标注调用：外层与内层各产一条记录，{@code extra} 互不污染，
-     * 内层结束后 ThreadLocal 恢复外层上下文（而不是被清空）。
-     */
+    /** 嵌套标注：内外层各产一条记录，{@code extra} 互不污染，内层结束恢复外层上下文。 */
     @OperateLog(module = "demo", operation = "outer", recordResponse = true)
     @GetMapping("/nested/{userId}")
     public Map<String, Object> nested(@PathVariable String userId) {
@@ -159,10 +131,7 @@ public class DemoController {
         return result;
     }
 
-    /**
-     * 序列化坏元素逐个降级：坏参数替换为 {@code <UNSERIALIZABLE:类型简名>}，
-     * 同批次的其他参数照常记录（单个坏参数不拖垮整条日志）。
-     */
+    /** 坏参数逐个降级为 {@code <UNSERIALIZABLE:类型简名>}，同批其他参数照常记录。 */
     @OperateLog(module = "demo", operation = "bad-arg")
     @PostMapping("/bad-arg")
     public Map<String, Object> badArg(@RequestParam String note,
@@ -172,10 +141,7 @@ public class DemoController {
         return result;
     }
 
-    /**
-     * 超长载荷：按 {@code payload.max-request-length} / {@code max-response-length} 截断，
-     * 结果长度恰好等于上限（{@code ...[truncated]} 标记计入上限，不外挂）。
-     */
+    /** 超长载荷按 {@code payload.max-*-length} 截断：结果长度恰好等于上限（标记计入上限）。 */
     @OperateLog(module = "demo", operation = "huge-payload", recordResponse = true)
     @PostMapping("/huge")
     public Map<String, Object> huge(@RequestBody Map<String, Object> body) {

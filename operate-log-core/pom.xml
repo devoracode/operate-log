@@ -17,48 +17,27 @@
     </description>
 
     <!--
-        ============================ 依赖边界（依赖污染防线）============================
+        ============================ 依赖边界 ============================
+        core 是库不是应用：可以在编译期依赖 Spring 5.3 / Boot 2.7 基线，但不能把这套版本
+        通过依赖图强加给消费者。若这些坐标是 compile 传递，消费者未 import Boot BOM 时
+        （自建 parent / 裸 POM）Maven 的「同深度先声明优先」可能让 core 的 Spring 5.x 胜出，
+        Boot 3 宿主启动即 NoSuchMethodError；slf4j 更隐蔽——1.7.x 优先时 logback 1.5 的
+        SLF4JServiceProvider 发现不了，全应用日志静默降为 NOP。
 
-        core 是 library，不是应用：它可以在自身编译期依赖 Spring 5.3.31
-        （与 Boot 2.7.18 运行时基线一致），但绝不允许通过 Maven dependency graph
-        把 Spring 5 强加给消费者。
-
-        风险场景（本 POM 修改前的真实问题）：
-          消费者 → operate-log-spring-boot-starter (深度 1)
-                 → operate-log-core               (深度 2)
-                 → spring-core:5.3.32             (深度 3, compile 传递，修复前)
-        与
-          消费者 → spring-boot-starter-web → spring-boot-starter → spring-core:6.1.16 (深度 3)
-        两条路径同深度时，Maven「同深度先声明优先」调解；消费者若未 import Boot BOM
-        （非 spring-boot-starter-parent 的自建 parent / 裸 POM 工程），
-        Boot 3 应用可能被调解到 core 的 Spring 5.x —— 启动即 NoSuchMethodError。
-        slf4j 更隐蔽：1.7.36 优先时 logback 1.5（仅注册 SLF4JServiceProvider）
-        无法被 slf4j 1.7 发现 → 全应用日志静默降为 NOP。
-
-        分类原则（按「宿主是否必然提供」+「跨代二进制兼容性」）：
-          · 宿主必然提供、且跨代不兼容  → optional（Spring 5 件套、slf4j-api）
-          · 宿主不必然提供、跨代兼容    → compile 保留传递（jackson-databind、
-                                         aspectjweaver、commons-lang3）
-        后三者若也改 optional，将强制宿主自行补 spring-boot-starter-json / -aop /
-        commons-lang3，破坏「只加一个 Starter 依赖即可用」的既有用法（README 快速开始），
-        故保留 compile。三者的版本 = Boot 2.7.18 所管理的版本（见根 POM 注释）：
-        作为消费者可见的下界，它既不能高于宿主基线（否则与宿主自身的 jackson-core /
-        annotations 混版），也不能低于 Boot 3 基线可用范围（Jackson 2.x 线内二进制兼容、
-        AspectJ 1.9.x 支持 JDK 8-21、commons-lang3 3.x 线内兼容，BOM 上调即可）。
+        分类原则（宿主是否必然提供 + 跨代是否二进制兼容）：
+          · 宿主必然提供、跨代不兼容 → optional：Spring 五件套、slf4j-api
+          · 宿主不必然提供、跨代兼容 → 保留 compile 传递：jackson-databind、aspectjweaver、
+            commons-lang3（改 optional 会逼宿主自行补依赖，破坏「加一个 Starter 即可用」）
+        三者版本 == Boot 2.7.18 基线（见根 POM），只作为下界，宿主 BOM 可安全上调。
     -->
     <dependencies>
-        <!--
-            本模块不含单元测试：断言全部落在 operate-log-test-boot2 / operate-log-test-boot3
-            两个真实容器集成测试模块里完成（两侧用例逐条对称，见各自 src/test）。
-        -->
+        <!-- 本模块不含单元测试：断言全部在 operate-log-test-boot2 / -boot3 的真实容器用例里。 -->
 
         <!--
-            Spring / SLF4J：宿主 Spring Boot 必然提供（Boot 2 → Spring 5.x，Boot 3 → Spring 6.x）。
-            optional 使其只参与 core 自身编译，不进入消费者依赖图，版本由宿主 BOM 决定。
-            core 源码只使用 Spring 5.3 与 6.x 中签名完全一致的公共 API
-            （AopUtils / AnnotationUtils / ClassUtils / DefaultParameterNameDiscoverer /
-            SpelExpressionParser / StandardEvaluationContext / RequestAttributes 等），
-            以及 slf4j 1.7 与 2.0 一致的 LoggerFactory / Logger / MDC API，跨代二进制兼容。
+            Spring / SLF4J 由宿主必然提供，标 optional 后只参与本模块编译。
+            前提：源码只用两代签名一致的公共 API（AopUtils / AnnotationUtils / ClassUtils /
+            DefaultParameterNameDiscoverer / SpelExpressionParser / RequestAttributes，
+            以及 slf4j 1.7 与 2.0 共有的 LoggerFactory / Logger / MDC）。
         -->
         <dependency>
             <groupId>org.springframework</groupId>
@@ -91,7 +70,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- 以下三项是 core 的硬运行时依赖，且宿主不必然提供：保留 compile 传递（见上方分类原则） -->
+        <!-- 硬运行时依赖、宿主不必然提供：保留 compile 传递（分类原则见上） -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>

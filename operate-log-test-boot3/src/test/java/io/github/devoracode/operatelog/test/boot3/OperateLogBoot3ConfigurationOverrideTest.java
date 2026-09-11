@@ -25,14 +25,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * 配置项在真实容器里的生效语义（不改配置键，只验证默认值被覆盖后的行为）：
- * {@code http.capture-headers} / {@code http.trust-proxy} / {@code mask.enabled} /
- * {@code payload.max-response-length} / {@code spel.enabled}。
- *
- * <p>独立上下文：这些属性必须整体切换语义，与默认配置用例（{@code OperateLogBoot3MockMvcTest}）
- * 分开跑，避免互相污染。</p>
- *
- * @author devoracode
+ * 配置项在真实容器里的生效语义（只覆盖默认值，不改配置键）：{@code http.capture-headers} /
+ * {@code http.trust-proxy} / {@code mask.enabled} / {@code payload.max-response-length} /
+ * {@code spel.enabled}。这些属性会整体切换语义，故用独立上下文跑，避免与默认配置用例互串。
  */
 @SpringBootTest(properties = {
         "operate-log.http.capture-headers=true",
@@ -52,11 +47,7 @@ class OperateLogBoot3ConfigurationOverrideTest {
     @Autowired
     private MockMvc mockMvc;
 
-    /**
-     * 必须挂在 @BeforeEach：@BeforeAll 早于 Spring 上下文启动，而 Boot 日志系统初始化会
-     * 重置 logback LoggerContext，把提前挂上的 appender 从 logger 树上摘掉（本模块其余
-     * 用例同一约定）。命名 + 判重保证同一 LoggerContext 内幂等（上下文跨用例缓存复用）。
-     */
+    /** 同 MockMvc 用例的约定：必须 @BeforeEach 挂载，命名 + 判重保证幂等。 */
     @BeforeEach
     void attachAppenderAndClear() {
         Logger logger = (Logger) LoggerFactory.getLogger(DefaultOperateLogHandler.class);

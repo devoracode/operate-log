@@ -28,18 +28,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Starter 装配语义验证（放在 Boot 2 测试工程内，用真实宿主 classpath 跑）：
- * javax 栈命中、无 Servlet API 时兜底、总开关关闭、用户 Bean 让位、属性绑定。
- *
- * <p>与 {@code OperateLogBoot2MockMvcTest} 的分工：那里断言「装配完成后的运行行为」，
- * 这里断言「装配本身的取舍规则」——其中「兜底实现」与「用户 Bean 让位」两种形态
- * 在真实 Web 应用里无法自然出现，只能用 {@link ApplicationContextRunner} +
- * {@link FilteredClassLoader} 模拟。</p>
- *
- * <p>另两条反射断言用于固化本轮收缩的公共 API：{@code @OperateLog} 只允许方法级标注，
- * 日志模型不再包含 HTTP 状态码字段。</p>
- *
- * @author devoracode
+ * Starter 装配规则验证（放在 Boot 2 测试工程里用真实宿主 classpath 跑）：javax 栈命中、
+ * 无 Servlet API 时兜底、总开关关闭、用户 bean 让位、属性绑定。其中「兜底」与「让位」两种形态
+ * 在真实 Web 应用里不会自然出现，只能靠 {@link ApplicationContextRunner} +
+ * {@link FilteredClassLoader} 模拟；另两条反射断言用来钉死公共 API 的形状。
  */
 class OperateLogBoot2StarterAssemblyTest {
 
@@ -120,19 +112,14 @@ class OperateLogBoot2StarterAssemblyTest {
                 });
     }
 
-    /**
-     * 收缩锁定：{@code @OperateLog} 仅方法级。类级标注会连带拦截整类方法，实用性不足，
-     * 已从注解 {@code @Target} 中移除；此断言防止它被顺手加回来。
-     */
+    /** 注解只允许方法级：类级标注会连带拦截整类方法，此断言防止 {@code @Target} 被顺手放宽。 */
     @Test
     void operateLogAnnotationTargetsMethodsOnly() {
         Target target = OperateLog.class.getAnnotation(Target.class);
         assertArrayEquals(new ElementType[]{ElementType.METHOD}, target.value());
     }
 
-    /**
-     * 收缩锁定：日志模型与 HTTP 上下文都不再携带状态码字段（见 HttpContextResolver 的取舍说明）。
-     */
+    /** 日志模型与 HTTP 上下文都不携带状态码字段（取舍见 {@code HttpContextResolver}）。 */
     @Test
     void logModelHasNoHttpStatusField() {
         assertFalse(hasField(OperateLogRecord.class, "httpStatus"), "OperateLogRecord 不应再有 httpStatus 字段");

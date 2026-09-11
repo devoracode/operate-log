@@ -10,63 +10,39 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 标记需要记录操作日志的方法。
+ * 标记需要记录操作日志的方法。只识别方法级标注：类上标注会连带拦截该类全部方法
+ * （含无需审计的 getter / 内部复用方法），噪声与开销都不可控。
  *
- * <p>只支持方法级标注：精确标注单个业务方法，不做类级默认值继承——
- * 类级标注会连带拦截该类全部方法（含无需审计的 getter / 内部复用方法），
- * 对高频核心类是性能与噪声双重代价，实用性不足。</p>
- *
- * <p>需要「整类统一配置」时，用 {@code @OperateLog} 的元注解组合（自定义注解）
- * 或在各方法上显式标注；本注解不承诺类级语义。</p>
- *
- * @author devoracode
+ * <p>需要「整类统一配置」时，用 {@code @OperateLog} 作元注解自定义注解，或逐方法标注。</p>
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 @Documented
 public @interface OperateLog {
-    /**
-     * 模块名（如 {@code user} / {@code order}）。
-     */
+    /** 模块名，如 {@code user} / {@code order}。 */
     String module() default "";
 
-    /**
-     * 操作名（如 {@code create} / {@code cancel}）。
-     */
+    /** 操作名，如 {@code create} / {@code cancel}。 */
     String operation() default "";
 
-    /**
-     * 操作类型。
-     */
+    /** 操作类型。 */
     OperateType type() default OperateType.OTHER;
 
-    /**
-     * 操作描述，SpEL 模板（{@code #{...}}）语法。
-     */
+    /** 操作描述，支持 {@code #{...}} SpEL 模板。 */
     String description() default "";
 
-    /**
-     * 业务 ID，纯 SpEL 表达式。
-     */
+    /** 业务 ID，纯 SpEL 表达式。 */
     String businessId() default "";
 
-    /**
-     * 记录条件，纯 SpEL 布尔表达式；为空或求值非 true 时不记录。与 {@link #recordOn()} 取交集。
-     */
+    /** 记录条件，SpEL 布尔表达式；为空或求值非 true 时不记录（与 {@link #recordOn()} 取交集）。 */
     String condition() default "";
 
-    /**
-     * 记录时机（ALWAYS / SUCCESS / ERROR）。
-     */
+    /** 记录时机。 */
     RecordOn recordOn() default RecordOn.ALWAYS;
 
-    /**
-     * 是否记录方法参数（序列化进 requestBody）。
-     */
+    /** 是否记录方法参数（序列化进 {@code requestBody}）。 */
     boolean recordRequest() default true;
 
-    /**
-     * 是否记录返回值（序列化进 responseBody），需显式开启。
-     */
+    /** 是否记录返回值（序列化进 {@code responseBody}），需显式开启。 */
     boolean recordResponse() default false;
 }

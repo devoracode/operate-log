@@ -12,36 +12,16 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * jakarta 栈（Spring Boot 3.x / Servlet 5+）HTTP 上下文解析器。
+ * jakarta 栈（Spring Boot 3.x / Servlet 5+）HTTP 上下文解析器：从 {@code RequestContextHolder} 取宿主 request，
+ * 采集请求侧快照。通道选择与「一类一栈」的原因见同包 {@code OperateLogJakartaClientIpResolver}
+ * 的类注释——同一个 request 对象，两处入口。
  *
- * <p><b>双栈兼容设计说明（与 javax 栈实现互为镜像）：</b></p>
- * <ol>
- *   <li><b>为什么一个类只 import 一种 Servlet API？</b>
- *       同类中两种栈的 {@code instanceof} 在单栈环境会触发
- *       {@link NoClassDefFoundError}，因此双栈拆成两个类，由自动配置按 classpath 条件装配。</li>
- *   <li><b>为什么不调用 {@code ServletRequestAttributes.getRequest()}？</b>
- *       该方法在 Spring 5.3（返回 javax 类型）与 Spring 6（返回 jakarta 类型）中
- *       方法描述符不同，编译期绑定后跨版本运行会抛 {@code NoSuchMethodError}。</li>
- *   <li><b>为什么用 {@code RequestAttributes.resolveReference(REFERENCE_REQUEST)}？</b>
- *       接口方法签名在两代 Spring 中二进制兼容，返回 {@code Object} 即宿主真实 request，
- *       再用 {@code instanceof} 收窄到本栈类型。</li>
- *   <li><b>为什么只读 request、不读 response？</b>
- *       状态码已从本组件的采集范围移除（切面 {@code finally} 早于返回值与异常处理阶段，
- *       取到的值容易被误读成客户端实际收到的状态码，取舍见
- *       {@link HttpContextResolver}）；因此本类无需反射
- *       {@code ServletRequestAttributes#getResponse()}，也不依赖任何 response 侧 API。</li>
- * </ol>
- *
- * @author devoracode
+ * <p>只读 request：状态码不在采集范围内（取舍见 {@link HttpContextResolver}），
+ * 因此本类不依赖任何 response 侧 API。</p>
  */
 public class OperateLogJakartaHttpContextResolver implements HttpContextResolver {
-    /**
-     * 客户端 IP 解析器（由自动配置注入，可能是本栈实现）。
-     */
+    /** 本栈 IP 解析器，可与本类共享同一条 request 通道。 */
     private final ClientIpResolver clientIpResolver;
-    /**
-     * 是否采集完整请求头。
-     */
     private final boolean captureHeaders;
 
     public OperateLogJakartaHttpContextResolver(ClientIpResolver clientIpResolver, boolean captureHeaders) {
@@ -73,9 +53,7 @@ public class OperateLogJakartaHttpContextResolver implements HttpContextResolver
                 .build();
     }
 
-    /**
-     * 采集请求头（以下 API 在 Servlet 4/5/6 中签名一致，二进制兼容）。
-     */
+    /** 采集请求头：所用 API 在 Servlet 4 / 5 / 6 中签名一致。 */
     private Map<String, String> resolveHeaders(HttpServletRequest request) {
         Map<String, String> headers = new LinkedHashMap<String, String>();
         Enumeration<String> headerNames = request.getHeaderNames();

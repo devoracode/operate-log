@@ -27,15 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 非 Web 形态（{@code spring.main.web-application-type=none}）下的真实启动验证：
- * 没有请求上下文时 Starter 必须照常完成装配、正常启动，HTTP 相关字段一律降级为
- * {@code null}，且切面对普通 bean 方法仍然生效。
- *
- * <p>本用例证明「真实 Boot 应用在无请求上下文时不炸、不误采」；
- * 「classpath 上完全没有 Servlet API 时装配兜底实现」由 {@code OperateLogBoot3StarterAssemblyTest}
- * 用 {@code FilteredClassLoader} 覆盖。</p>
- *
- * @author devoracode
+ * 非 Web 形态（{@code spring.main.web-application-type=none}）下的真实启动验证：无请求上下文时
+ * Starter 照常装配、正常启动，HTTP 字段一律 {@code null}，切面对普通 bean 方法仍然生效。
+ * 「classpath 完全没有 Servlet API 时兜底装配」由 {@code OperateLogBoot3StarterAssemblyTest}
+ * 用 {@code FilteredClassLoader} 覆盖。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
         properties = "spring.main.web-application-type=none")

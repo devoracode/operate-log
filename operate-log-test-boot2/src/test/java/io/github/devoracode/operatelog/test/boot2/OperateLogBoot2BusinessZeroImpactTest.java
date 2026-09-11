@@ -30,16 +30,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Business Zero Impact：真实 Servlet 容器下，日志链路任何一环故障都不得影响业务。
+ * 故障点经 {@link ChaosFlags} 逐个点亮：{@code OperatorResolver}（业务执行前）、
+ * {@code OperateLogSerializer} 与 {@code OperateLogHandler}（收尾阶段，即切面
+ * {@code finally}）——后两者正是「日志异常容易顶替业务异常」的位置。
  *
- * <p>故障注入点（经 {@link ChaosFlags} 逐个点亮，互不牵连）：
- * {@code OperatorResolver}（业务执行前）、{@code OperateLogSerializer} 与
- * {@code OperateLogHandler}（业务执行后的收尾阶段，即切面 {@code finally}）——
- * 最后这两个正是「日志异常容易顶替业务异常」的位置。</p>
- *
- * <p>用 {@code RANDOM_PORT} + {@link TestRestTemplate} 而不是 MockMvc：
- * 需要真实容器的返回值处理与 {@code /error} 路径来判定「客户端实际拿到了什么」。</p>
- *
- * @author devoracode
+ * <p>用 {@code RANDOM_PORT} + {@link TestRestTemplate} 而非 MockMvc：需要真实容器的返回值
+ * 处理与 {@code /error} 路径，才能判定客户端实际拿到了什么。</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OperateLogBoot2BusinessZeroImpactTest {
@@ -53,10 +49,7 @@ class OperateLogBoot2BusinessZeroImpactTest {
     @Autowired
     private TestRestTemplate restTemplate;
 
-    /**
-     * 故障版序列化器与 Handler：仅替换自动配置的默认实现，
-     * 未开启故障时完全委托原实现，保证「控制组」用例仍是真实落地路径。
-     */
+    /** 故障版序列化器与 Handler：未点亮故障时完全委托默认实现，控制组仍走真实落地路径。 */
     @TestConfiguration
     static class ChaosConfiguration {
 

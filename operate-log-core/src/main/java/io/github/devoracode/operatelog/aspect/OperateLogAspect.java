@@ -39,37 +39,20 @@ import java.util.UUID;
 /**
  * 操作日志切面。
  *
- * <p><b>注解查找链</b>（兼容全部代理形态）：目标类 most-specific 方法 → 调用方法
- * （JDK 动态代理时为接口方法）→ 目标类实现的全部接口上的同签名方法。
- * 注解直接标注实现方法、经父类/接口继承、仅标注接口方法（JDK 代理场景）均可识别。
- * 注意：Spring 创建 CGLIB 代理的资格判定只看目标类方法，若注解仅标注在接口方法上
- * 且宿主使用 CGLIB 代理（Spring Boot 默认 {@code proxyTargetClass=true}），
- * 该 advice 不会被织入——此时请将注解放到实现类方法上。</p>
+ * <p><b>注解查找链</b>（兼容全部代理形态）：目标类 most-specific 方法 → 调用方法（JDK 代理时
+ * 即接口方法）→ 目标类实现的全部接口上的同签名方法。若注解只标在接口方法上而宿主用 CGLIB
+ * （Boot 默认 {@code proxyTargetClass=true}），Spring 的代理资格判定看不到它、advice 不会织入，
+ * 此时请把注解放到实现类方法上。</p>
  *
- * <p><b>记录时机过滤</b>：{@code recordOn}（ALWAYS / SUCCESS / ERROR）在 SpEL
- * 条件之前先行短路，低成本实现「仅成功 / 仅失败」审计。</p>
- *
- * <p><b>HTTP 上下文</b>：请求侧信息（method / url / uri / query / headers / clientIp /
- * userAgent）在业务方法执行前经 {@link HttpContextResolver#resolve()} 一次性采集。
- * 本组件<b>不记录 HTTP 状态码</b>：环绕通知的 {@code finally} 早于 Spring MVC 的返回值处理
- * 与全局异常处理，此刻的 {@code response.getStatus()} 无法代表客户端实际拿到的状态，
- * 与其记录一个易被误读为「最终状态」的值，不如不提供（审计判据用 {@code success} +
- * {@code errorType} / {@code errorMessage}）。</p>
- *
- * <p><b>业务零影响纪律</b>：注解查找、上下文构建、记录组装与 Handler 落地
- * 全部包裹独立 try-catch，任何日志侧故障仅以 warn 日志暴露，绝不向业务传播；
- * 业务异常原样透传。特别注意：{@code finally} 中的收尾逻辑本身也不得抛出，
- * 否则会用日志异常顶替业务异常（{@code finishQuietly} 负责兜住这一层）。</p>
- *
- * @author devoracode
+ * <p><b>业务零影响纪律</b>：注解查找、上下文构建、组装与落地各自包 try-catch，日志侧故障只以
+ * warn / debug 暴露，业务异常原样透传；{@code finally} 里的收尾同样不得抛出，否则日志异常会
+ * 顶替业务异常（{@code finishQuietly} 负责兜底）。</p>
  */
 @Aspect
 @RequiredArgsConstructor
 public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
-    /**
-     * traceId 的默认 MDC key（可被 {@code operate-log.trace-id-mdc-key} 覆盖）。
-     */
+    /** traceId 默认 MDC key，可由 {@code operate-log.trace-id-mdc-key} 覆盖。 */
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
@@ -143,12 +126,9 @@ public class OperateLogAspect {
     }
 
     /**
-     * 日志收尾：计时 → 组装并落地。
-     *
-     * <p><b>本方法绝不向外抛出任何异常</b>：它运行在切面 {@code finally} 中，
-     * 逃逸的异常会顶替业务异常（或污染正常返回值），直接违反业务零影响原则。
-     * {@code handleSafely} 内部已自带兜底，这里再包一层是覆盖计时等
-     * 「看似不会失败」的语句，杜绝任何日志侧故障影响业务。</p>
+     * 日志收尾：计时 → 组装并落地。<b>绝不向外抛出</b>：它运行在切面 {@code finally} 中，
+     * 逃逸的异常会顶替业务异常或污染返回值；{@code handleSafely} 已有兜底，这里再包一层
+     * 是为了覆盖计时等「看似不会失败」的语句。
      */
     private void finishQuietly(OperateLogContext context) {
         try {
@@ -162,9 +142,7 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 恢复外层上下文（嵌套标注方法场景）或解绑当前线程上下文。
-     */
+    /** 嵌套场景恢复外层上下文，否则解绑当前线程。 */
     private void restorePreviousContext(OperateLogContext previous) {
         if (previous == null) {
             OperateLogContextHolder.unbind();
@@ -173,9 +151,7 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * {@code recordOn} 记录时机过滤：SUCCESS 仅在正常返回时记录，ERROR 仅在抛出异常时记录。
-     */
+    /** {@code recordOn} 过滤：SUCCESS 只在正常返回时记，ERROR 只在抛异常时记；先于 SpEL 条件短路。 */
     private boolean shouldRecord(OperateLogContext context) {
         RecordOn recordOn = context.getAnnotation().recordOn();
         if (recordOn == null) {
@@ -215,10 +191,7 @@ public class OperateLogAspect {
         return findInterfaceAnnotation(targetClass, lookupMethod);
     }
 
-    /**
-     * 在目标类实现的全部接口（含父接口）上查找同签名方法的注解。
-     * 覆盖「@OperateLog 仅标注接口方法 + JDK 动态代理」场景。
-     */
+    /** 在目标类的全部接口（含父接口）上找同签名方法的注解，覆盖「只标接口 + JDK 代理」。 */
     private OperateLog findInterfaceAnnotation(Class<?> targetClass, Method method) {
         if (targetClass == null || method == null) {
             return null;
@@ -259,11 +232,7 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 采集 HTTP 上下文（业务方法执行前的请求侧信息）。
-     *
-     * <p>解析失败只让 HTTP 相关字段为 {@code null}，不影响业务。</p>
-     */
+    /** 采集请求侧 HTTP 快照；解析失败只让相关字段为 {@code null}。 */
     private HttpContext resolveHttpContext() {
         try {
             return this.httpContextResolver.resolve();
@@ -273,10 +242,7 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 日志组装与落地全程隔离：任何故障只损失这条日志本身，
-     * 并在 debug 级别暴露原因（组件自身可观测），绝不触碰业务执行。
-     */
+    /** 组装与落地全程隔离：故障只损失本条日志，原因在 debug 级别暴露。 */
     private void handleSafely(OperateLogContext context) {
         try {
             // recordOn 先行短路过滤（无 SpEL 求值成本），再进 condition 交集判定

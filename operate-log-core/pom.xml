@@ -49,7 +49,7 @@
     <dependencies>
         <!--
             本模块不含单元测试：断言全部落在 operate-log-test-boot2 / operate-log-test-boot3
-            两个真实容器集成测试模块里完成（见 README「构建」中的测试分层）。
+            两个真实容器集成测试模块里完成（两侧用例逐条对称，见各自 src/test）。
         -->
 
         <!--

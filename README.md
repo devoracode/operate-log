@@ -43,7 +43,7 @@
 | `operate-log-core` | 核心：注解、AOP 切面、上下文模型（含 `extra` 自定义字段通道）、SpEL 引擎、序列化、脱敏、载荷防护（PayloadPolicy）、Handler / Resolver 扩展点。Java 8 基线；Spring 与 SLF4J 为 `optional`（版本由宿主 Boot 决定），仅 jackson-databind / aspectjweaver / commons-lang3 以 compile 传递（宿主不必然提供，且跨 Boot 2/3 二进制兼容） |
 | `operate-log-spring-boot-starter` | Boot 2.x / 3.x 双栈自动装配：`javax` / `jakarta` 两套 Servlet 解析实现按 classpath 自动选择，非 Web 环境兜底。Java 8 字节码，Boot 相关依赖全部 `provided` 零传递 |
 | `operate-log-test-boot2` | Boot 2.x 可运行示例（`javax` 栈冒烟） |
-| `operate-log-test-boot3` | Boot 3.x 可运行示例（`jakarta` 栈冒烟，JDK 17+ 构建时自动纳入，见「构建」） |
+| `operate-log-test-boot3` | Boot 3.x 可运行示例与全部集成用例（`jakarta` 栈，JDK 17+ 时自动纳入构建） |
 
 ## 快速开始
 
@@ -436,82 +436,6 @@ OperateLogAspect @Around 拦截
 - 提示：截至 2026-09，Boot 2.x / 3.x 各线在**上游均已 OSS 停止维护**，
   安全补丁请自行评估（商业延长支持如 HeroDevs NES 可选）。本项目仍会按
   CI 矩阵持续认证兼容性。
-
-## 构建
-
-| 环境 | 命令 | 构建内容 |
-| --- | --- | --- |
-| JDK 8 | `mvn clean install` | core + starter + test-boot2（3 个模块，测试只跑 test-boot2） |
-| JDK 17+ | `mvn clean install` | 上述 + test-boot3（`jdk [17,)` profile 自动激活） |
-
-冒烟验证（JDK 17 环境）：
-
-```bash
-# Boot 2 示例（javax 栈）
-mvn -pl operate-log-test-boot2 spring-boot:run
-# 另开终端
-curl http://localhost:8080/demo/42
-curl -X POST http://localhost:8080/demo -H "Content-Type: application/json" \
-     -d '{"name":"a","password":"secret"}'
-
-# Boot 3 示例（jakarta 栈）
-mvn -pl operate-log-test-boot3 spring-boot:run
-curl http://localhost:8080/demo/42
-```
-
-预期：两个示例的控制台均输出 `operate-log={...}` 单行 JSON，且 POST 请求中 `password` 字段被脱敏为 `******`。
-
-持续集成（`.github/workflows/ci.yml`）在 **JDK 8 / 17 / 21** 三档跑全量
-`mvn clean verify`：boot2 / boot3 两侧逐条对称的五类用例（装配选择、端到端字段、
-配置覆盖语义、Business Zero Impact、非 Web 环境）全部在矩阵内——
-「双栈 + 全 JDK 代际」是本项目对单栈同类库的护城河，以 CI 锁死，任何 PR 不允许回归。
-
-**测试分层**：`operate-log-core` 与 `operate-log-spring-boot-starter` **不放单元测试**，
-全部断言在两个真实 Boot 应用模块里完成——本项目是「装配 + 切面」型组件，
-脱离真实容器与真实 classpath 的隔离单测容易测到实现细节，而测不到会出事的地方。
-
-| 模块 / 用例 | 覆盖内容 |
-| --- | --- |
-| `operate-log-test-boot2`、`operate-log-test-boot3`（两侧逐条对称） | |
-| `...MockMvcTest` | 经完整 Spring MVC + AOP 链路断言落地 JSON 的每个字段：SpEL（变量面 + 失败降级）、`condition` / `recordOn` 短路、脱敏（嵌套 + 大小写、精确匹配不误伤）、`<IGNORED:>` 忽略类型、`<UNSERIALIZABLE:>` 逐元素降级、截断恰等于上限（含标记）、嵌套调用 `extra` 隔离与上下文恢复、traceId（MDC 命中 / 缺失生成）、`clientIp` 与 `userAgent`、日志模型中不得出现 `httpStatus` |
-| `...ConfigurationOverrideTest` | 独立上下文覆盖配置生效语义：`capture-headers`、`trust-proxy`（X-Forwarded-For 链取首个）、`mask.enabled=false`、`payload.max-response-length` 覆盖后的截断长度、`spel.enabled=false` 的引擎直通降级 |
-| `...BusinessZeroImpactTest` | `RANDOM_PORT` 真实容器 + 故障开关：`OperatorResolver` / `OperateLogSerializer` / `OperateLogHandler` 分别抛异常时业务状态码与返回体不受影响；日志全线故障下业务异常仍以 500 收口、文案不被日志异常顶替 |
-| `...NonWebContextTest` | `web-application-type=none`：应用照常启动、切面对普通 bean 生效、HTTP 字段全为 `null`、解析器返回 `null` 而不抛异常 |
-| `...StarterAssemblyTest` | `ApplicationContextRunner` + `FilteredClassLoader`：本栈解析器命中且**只有一套**、隐藏 Servlet API 后走兜底实现、`enabled=false` 整体不装配、用户 `HttpContextResolver` 让位仍保留栈内 `ClientIpResolver`、属性绑定到 `PayloadPolicy` / `SensitiveDataMasker`；并以反射固化「`@OperateLog` 只允许方法级」「`OperateLogRecord` / `HttpContext` 无状态码字段」 |
-
-> MockMvc 不执行容器真正的返回值处理阶段，所以 `@ResponseStatus` 这类「晚于切面」的状态改写
-> 在测试中表现为「客户端拿到 201、日志里记 200」——这是**刻意的边界断言**
-> （`annotatedResponseStatusIsBeyondAspectReach`），不是断言写错。
-> 要断言真实响应语义就用 `webEnvironment = RANDOM_PORT` + `TestRestTemplate#getStatusCode()`。
-
-**依赖边界检查**：测试工程 import BOM 会掩盖库侧污染，「测试通过」证明不了产物干净，
-因此必须直接看依赖树（等价于 CI 的 `dependency-hygiene` 作业）：
-
-```bash
-mvn -B -DskipTests install                          # 先把本仓库装进本地库供依赖树解析
-mvn -B -ntp dependency:tree -pl operate-log-spring-boot-starter \
-    -DoutputFile=target/dep-tree-starter.txt
-mvn -B -ntp dependency:tree -pl operate-log-test-boot2 \
-    -DoutputFile=target/dep-tree-boot2.txt
-mvn -B -ntp dependency:tree -pl operate-log-test-boot3 \
-    -DoutputFile=target/dep-tree-boot3.txt          # 需 JDK 17+（boot3-test profile 自动激活）
-bash .github/scripts/dependency-hygiene.sh \
-    target/dep-tree-boot2.txt target/dep-tree-boot3.txt target/dep-tree-starter.txt
-```
-
-预期：Boot 2 树中 `spring-core` 只有一个版本且来自宿主（2.7.18 → `5.3.31`，**不是** core 曾传递的 `5.3.32`）；
-Boot 3 树中 `org.springframework:*` 全为 `6.x`、`slf4j-api` 为 `2.0.x`、Jackson 三件套同版本、无 `5.x` 残留；
-Starter 树中没有任何 `compile` 作用域的 `org.springframework:*` / `org.slf4j:*`，
-但 `jackson-databind` / `aspectjweaver` / `commons-lang3` 必须以 `compile` 传递（宿主不必然提供）。
-门禁是双向的：把任一 `optional` / `provided` 改回 `compile` 会红，把 core 的硬依赖裁成 `provided` 也会红。
-
-发布与二进制兼容：core / starter 的 MINOR、PATCH 升级必须对下游二进制兼容，
-合入前后可用 japicmp 门禁自查（详见 [RELEASE.md](RELEASE.md)）：
-
-```bash
-mvn -B -pl operate-log-core,operate-log-spring-boot-starter \
-    verify -Djapicmp.oldVersion=<上一发布版本>
-```
 
 ## 已知限制与规划
 

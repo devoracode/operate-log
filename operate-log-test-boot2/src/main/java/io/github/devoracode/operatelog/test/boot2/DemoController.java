@@ -24,7 +24,7 @@ import java.util.Map;
  * 与 boot3 模块的同名类逐条对称——同一份 Starter 产物在两栈下行为必须一致。</p>
  *
  * <p>本模块不写「单元测试」：core / starter 的可观测行为一律在这里用真实
- * Spring MVC + AOP 链路验证（见 README「构建」中的测试分层）。</p>
+ * Spring MVC + AOP 链路验证，与另一栈的测试工程逐条对称。</p>
  *
  * @author devoracode
  */

@@ -26,9 +26,10 @@
 
         分类原则（宿主是否必然提供 + 跨代是否二进制兼容）：
           · 宿主必然提供、跨代不兼容 → optional：Spring 五件套、slf4j-api
-          · 宿主不必然提供、跨代兼容 → 保留 compile 传递：jackson-databind、aspectjweaver、
-            commons-lang3（改 optional 会逼宿主自行补依赖，破坏「加一个 Starter 即可用」）
-        三者版本 == Boot 2.7.18 基线（见根 POM），只作为下界，宿主 BOM 可安全上调。
+          · 宿主不必然提供 → 保留 compile 传递：fory-json（组件自带的 JSON 实现）、
+            aspectjweaver、commons-lang3（改 optional 会逼宿主自行补依赖，破坏「加一个 Starter 即可用」）
+        aspectjweaver / commons-lang3 版本 == Boot 2.7.18 基线（见根 POM），只作为下界；
+        fory-json 不在 Boot BOM 内，由本组件定版，宿主需要时可用自身 dependencyManagement 覆盖。
     -->
     <dependencies>
         <!-- 本模块不含单元测试：断言全部在 operate-log-test-boot2 / -boot3 的真实容器用例里。 -->
@@ -72,9 +73,9 @@
 
         <!-- 硬运行时依赖、宿主不必然提供：保留 compile 传递（分类原则见上） -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>${jackson.version}</version>
+            <groupId>org.apache.fory</groupId>
+            <artifactId>fory-json</artifactId>
+            <version>${fory.version}</version>
         </dependency>
         <dependency>
             <groupId>org.aspectj</groupId>

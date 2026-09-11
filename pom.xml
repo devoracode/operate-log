@@ -53,13 +53,15 @@
         <spring.boot3.version>3.3.13</spring.boot3.version>
         <!--
             这些版本既是 core / starter 的编译基线，也是 core 非 optional 传递依赖
-            （jackson-databind / aspectjweaver / commons-lang3）向消费者声明的下界。
+            （aspectjweaver / commons-lang3）向消费者声明的下界。
             纪律：下界必须 == Boot 2.7.18 管理的版本，不得更高——消费者把 Starter 写在
             spring-boot-starter-web 之前时我方版本会胜出（同深度先声明优先），高于宿主基线
-            就会出现 databind 新、core / annotations 旧的混版。Boot 3 宿主由 BOM 统一上调。
+            就会出现混版。Boot 3 宿主由 BOM 统一上调。
+            fory-json 不在任何 Boot BOM 内，由本组件定版（宿主可用自身 dependencyManagement 覆盖）；
+            组件不自带 Jackson，因此宿主用 Jackson 2 还是 Jackson 3（Boot 4）都不影响本组件。
         -->
         <spring.framework.version>5.3.31</spring.framework.version>
-        <jackson.version>2.13.5</jackson.version>
+        <fory.version>1.7.1</fory.version>
         <aspectj.version>1.9.7</aspectj.version>
         <commons-lang3.version>3.12.0</commons-lang3.version>
         <slf4j.version>1.7.36</slf4j.version>

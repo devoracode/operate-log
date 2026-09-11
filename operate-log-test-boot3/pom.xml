@@ -22,7 +22,7 @@
     <!--
         import Boot 3 BOM 与真实 Boot 3 应用一致：jackson / logback / slf4j 全部由 BOM 定版。
         core 的 spring-* / slf4j-api 是 optional，不会以 Spring 5.x 参与调解，因此这里无需
-        任何「压制库侧传递版本」的写法；「库不得把 Spring 5 推给 Boot 3 宿主」可直接用
+        任何「压制库侧传递版本」的写法；组件自带 fory-json，与宿主自身的 Jackson 无关；「库不得把 Spring 5 推给 Boot 3 宿主」可直接用
         mvn -B dependency:tree 的输出核对。
     -->
     <dependencyManagement>

@@ -1,16 +1,24 @@
 package io.github.devoracode.operatelog.serializer;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
+import io.github.devoracode.operatelog.json.ForyJsons;
+import org.apache.fory.json.ForyJson;
 
 /**
- * 基于 Jackson 的操作日志序列化器。失败语义：任何序列化异常（getter 抛错、循环引用、
+ * 基于 Fory JSON 的操作日志序列化器。失败语义：任何序列化异常（getter 抛错、循环引用、
  * 栈溢出等）都被吞掉并降级为占位符——只损失对应字段，不损失整条记录，更不影响业务方法。
  */
-@RequiredArgsConstructor
-public class JacksonOperateLogSerializer implements OperateLogSerializer {
+public class ForyOperateLogSerializer implements OperateLogSerializer {
     private static final String UNSERIALIZABLE = "<UNSERIALIZABLE>";
-    private final ObjectMapper objectMapper;
+
+    private final ForyJson json;
+
+    public ForyOperateLogSerializer() {
+        this(ForyJsons.defaultJson());
+    }
+
+    public ForyOperateLogSerializer(ForyJson json) {
+        this.json = json;
+    }
 
     @Override
     public String serialize(Object value) {
@@ -54,7 +62,7 @@ public class JacksonOperateLogSerializer implements OperateLogSerializer {
     /** 静默序列化：成功返回 JSON，任何失败返回 {@code null} 交由调用方降级。 */
     private String writeQuietly(Object value) {
         try {
-            return this.objectMapper.writeValueAsString(value);
+            return this.json.toJson(value);
         } catch (Exception | StackOverflowError ex) {
             return null;
         }

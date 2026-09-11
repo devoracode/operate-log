@@ -1,6 +1,5 @@
 package io.github.devoracode.operatelog.test.boot3;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.devoracode.operatelog.annotation.OperateLog;
 import io.github.devoracode.operatelog.aspect.OperateLogAspect;
 import io.github.devoracode.operatelog.boot.OperateLogAutoConfiguration;
@@ -36,8 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class OperateLogBoot3StarterAssemblyTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withConfiguration(AutoConfigurations.of(OperateLogAutoConfiguration.class))
-            .withBean(ObjectMapper.class, ObjectMapper::new);
+            .withConfiguration(AutoConfigurations.of(OperateLogAutoConfiguration.class));
 
     @Test
     void jakartaStackSelectedOnBoot3Classpath() {

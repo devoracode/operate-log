@@ -3,8 +3,6 @@ package io.github.devoracode.operatelog.test.boot3;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,8 +14,12 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.text;
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.flag;
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.isNull;
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.child;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -40,7 +42,6 @@ class OperateLogBoot3ConfigurationOverrideTest {
 
     private static final String LOG_PREFIX = "operate-log=";
     private static final String APPENDER_NAME = "test-operate-log-override";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static ListAppender<ILoggingEvent> appender;
 
@@ -78,11 +79,11 @@ class OperateLogBoot3ConfigurationOverrideTest {
                 .header("X-Forwarded-For", "203.0.113.7, 10.0.0.1")
                 .header("User-Agent", "override-it/1.0"));
 
-        JsonNode record = lastRecord();
+        Map<String, Object> record = lastRecord();
         // trust-proxy=true：取 X-Forwarded-For 链第一个（最原始客户端）
-        assertEquals("203.0.113.7", record.get("clientIp").asText());
+        assertEquals("203.0.113.7", text(record, "clientIp"));
         // capture-headers=true：请求头以 JSON 入日志（本身也走脱敏管道，此处 mask.enabled=false）
-        String headers = record.get("requestHeaders").asText();
+        String headers = text(record, "requestHeaders");
         assertTrue(headers.contains("override-it/1.0"), headers);
         assertTrue(headers.contains("203.0.113.7"), headers);
     }
@@ -93,7 +94,7 @@ class OperateLogBoot3ConfigurationOverrideTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"password\":\"plain-when-mask-off\"}"));
 
-        assertTrue(lastRecord().get("requestBody").asText().contains("plain-when-mask-off"),
+        assertTrue(text(lastRecord(), "requestBody").contains("plain-when-mask-off"),
                 "mask.enabled=false 时不得改写内容");
     }
 
@@ -107,7 +108,7 @@ class OperateLogBoot3ConfigurationOverrideTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"blob\":\"" + blob + "\"}"));
 
-        String responseBody = lastRecord().get("responseBody").asText();
+        String responseBody = text(lastRecord(), "responseBody");
         // max-response-length=64：上限含 ...[truncated] 标记，结果长度恰好 64
         assertEquals(64, responseBody.length(), "实际长度 " + responseBody.length());
         assertTrue(responseBody.endsWith("...[truncated]"), responseBody);
@@ -117,32 +118,27 @@ class OperateLogBoot3ConfigurationOverrideTest {
     void spelDisabledFallsBackToPassthrough() throws Exception {
         this.mockMvc.perform(get("/demo/42"));
 
-        JsonNode record = lastRecord();
+        Map<String, Object> record = lastRecord();
         // 引擎直通：模板输出原文、businessId 为 null、condition 恒通过（记录照常产出）
-        assertEquals("查询用户 #{#userId}", record.get("description").asText());
-        assertTrue(record.get("businessId").isNull(), String.valueOf(record.get("businessId")));
-        assertTrue(record.get("success").asBoolean());
+        assertEquals("查询用户 #{#userId}", text(record, "description"));
+        assertTrue(isNull(record, "businessId"), String.valueOf(record.get("businessId")));
+        assertTrue(flag(record, "success"));
     }
 
     @Test
     void extraChannelStillWorksWhenSpelDisabled() throws Exception {
         this.mockMvc.perform(get("/demo/42"));
 
-        assertEquals("extra-channel", lastRecord().get("extra").get("demo").asText());
+        assertEquals("extra-channel", text(child(lastRecord(), "extra"), "demo"));
         assertFalse(appender.list.isEmpty());
     }
 
-    private JsonNode lastRecord() {
-        JsonNode last = null;
+    private Map<String, Object> lastRecord() {
+        Map<String, Object> last = null;
         for (ILoggingEvent event : appender.list) {
             String message = event.getFormattedMessage();
             if (message.startsWith(LOG_PREFIX)) {
-                try {
-                    last = MAPPER.readTree(message.substring(LOG_PREFIX.length())
-                            .getBytes(StandardCharsets.UTF_8));
-                } catch (Exception ex) {
-                    throw new IllegalStateException("operate-log line is not valid JSON", ex);
-                }
+                last = LogRecords.parse(message.substring(LOG_PREFIX.length()));
             }
         }
         assertTrue(last != null, "未捕获到日志记录，appender 看到 " + appender.list.size() + " 条事件");

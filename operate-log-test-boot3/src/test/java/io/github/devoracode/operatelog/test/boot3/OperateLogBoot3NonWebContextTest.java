@@ -3,8 +3,6 @@ package io.github.devoracode.operatelog.test.boot3;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.devoracode.operatelog.aspect.OperateLogAspect;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import io.github.devoracode.operatelog.model.HttpContext;
@@ -18,8 +16,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 
-import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.text;
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.flag;
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.isNull;
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.child;
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.has;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -38,7 +41,6 @@ class OperateLogBoot3NonWebContextTest {
 
     private static final String LOG_PREFIX = "operate-log=";
     private static final String APPENDER_NAME = "test-operate-log-non-web";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static ListAppender<ILoggingEvent> appender;
 
@@ -83,18 +85,18 @@ class OperateLogBoot3NonWebContextTest {
 
         assertEquals("ok", controller.query("9").get("message"));
 
-        JsonNode record = lastRecord();
+        Map<String, Object> record = lastRecord();
         assertNotNull(record, "非 Web 场景仍应产出日志记录");
-        assertEquals("query", record.get("operation").asText());
-        assertTrue(record.get("success").asBoolean());
+        assertEquals("query", text(record, "operation"));
+        assertTrue(flag(record, "success"));
         // 无请求上下文：HTTP 字段一律为 null，且不得因此报错
-        assertTrue(record.get("requestUri").isNull(), String.valueOf(record.get("requestUri")));
-        assertTrue(record.get("requestMethod").isNull(), String.valueOf(record.get("requestMethod")));
-        assertTrue(record.get("clientIp").isNull(), String.valueOf(record.get("clientIp")));
-        assertTrue(record.get("userAgent").isNull(), String.valueOf(record.get("userAgent")));
-        assertFalse(record.has("httpStatus"), "httpStatus 已从日志模型中移除: " + record);
+        assertTrue(isNull(record, "requestUri"), String.valueOf(record.get("requestUri")));
+        assertTrue(isNull(record, "requestMethod"), String.valueOf(record.get("requestMethod")));
+        assertTrue(isNull(record, "clientIp"), String.valueOf(record.get("clientIp")));
+        assertTrue(isNull(record, "userAgent"), String.valueOf(record.get("userAgent")));
+        assertFalse(has(record, "httpStatus"), "httpStatus 已从日志模型中移除: " + record);
         // 业务方法返回值不受影响
-        assertEquals("extra-channel", record.get("extra").get("demo").asText());
+        assertEquals("extra-channel", text(child(record, "extra"), "demo"));
     }
 
     @Test
@@ -106,17 +108,12 @@ class OperateLogBoot3NonWebContextTest {
         assertNull(this.context.getBean(ClientIpResolver.class).resolve());
     }
 
-    private JsonNode lastRecord() {
-        JsonNode last = null;
+    private Map<String, Object> lastRecord() {
+        Map<String, Object> last = null;
         for (ILoggingEvent event : appender.list) {
             String message = event.getFormattedMessage();
             if (message.startsWith(LOG_PREFIX)) {
-                try {
-                    last = MAPPER.readTree(message.substring(LOG_PREFIX.length())
-                            .getBytes(StandardCharsets.UTF_8));
-                } catch (Exception ex) {
-                    throw new IllegalStateException("operate-log line is not valid JSON", ex);
-                }
+                last = LogRecords.parse(message.substring(LOG_PREFIX.length()));
             }
         }
         return last;

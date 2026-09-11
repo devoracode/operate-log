@@ -33,8 +33,8 @@
 
     <dependencies>
         <!--
-            唯一 compile 依赖：core 传递 jackson-databind / aspectjweaver / commons-lang3
-            （硬运行时依赖且跨 Boot 2/3 兼容）；Spring 与 SLF4J 在 core 里已是 optional，
+            唯一 compile 依赖：core 传递 fory-json / aspectjweaver / commons-lang3
+            （硬运行时依赖，跨 Boot 2/3/4 通用）；Spring 与 SLF4J 在 core 里已是 optional，
             不会把 Boot 2 时代的版本污染给宿主。
         -->
         <dependency>

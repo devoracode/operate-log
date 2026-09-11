@@ -3,11 +3,9 @@ package io.github.devoracode.operatelog.test.boot3;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import io.github.devoracode.operatelog.handler.OperateLogHandler;
-import io.github.devoracode.operatelog.serializer.JacksonOperateLogSerializer;
+import io.github.devoracode.operatelog.serializer.ForyOperateLogSerializer;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -21,8 +19,10 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.ResponseEntity;
 
-import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.text;
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.isNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -42,7 +42,6 @@ class OperateLogBoot3BusinessZeroImpactTest {
 
     private static final String LOG_PREFIX = "operate-log=";
     private static final String APPENDER_NAME = "test-operate-log-zero-impact";
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static ListAppender<ILoggingEvent> appender;
 
@@ -54,8 +53,8 @@ class OperateLogBoot3BusinessZeroImpactTest {
     static class ChaosConfiguration {
 
         @Bean
-        OperateLogSerializer operateLogSerializer(ObjectMapper objectMapper) {
-            final OperateLogSerializer delegate = new JacksonOperateLogSerializer(objectMapper);
+        OperateLogSerializer operateLogSerializer() {
+            final OperateLogSerializer delegate = new ForyOperateLogSerializer();
             return new OperateLogSerializer() {
                 @Override
                 public String serialize(Object value) {
@@ -72,8 +71,8 @@ class OperateLogBoot3BusinessZeroImpactTest {
         }
 
         @Bean
-        OperateLogHandler operateLogHandler(ObjectMapper objectMapper) {
-            final OperateLogHandler delegate = new DefaultOperateLogHandler(objectMapper);
+        OperateLogHandler operateLogHandler() {
+            final OperateLogHandler delegate = new DefaultOperateLogHandler();
             return record -> {
                 ChaosFlags.throwIfActive(ChaosFlags.HANDLER, "chaos: handler down");
                 delegate.handle(record);
@@ -118,9 +117,9 @@ class OperateLogBoot3BusinessZeroImpactTest {
 
         assertEquals(200, response.getStatusCode().value());
         assertTrue(response.getBody().contains("\"message\":\"ok\""), String.valueOf(response.getBody()));
-        JsonNode record = lastRecord();
+        Map<String, Object> record = lastRecord();
         assertNotNull(record, "控制组必须照常落地日志");
-        assertEquals("10001", record.get("operatorUserId").asText());
+        assertEquals("10001", text(record, "operatorUserId"));
     }
 
     @Test
@@ -132,12 +131,12 @@ class OperateLogBoot3BusinessZeroImpactTest {
         assertEquals(200, response.getStatusCode().value(), "解析器异常绝不允许影响业务响应");
         assertTrue(response.getBody().contains("\"message\":\"ok\""), String.valueOf(response.getBody()));
         // 解析降级只损失 operator 三个字段，其余字段照常（各自独立 try-catch 的契约）
-        JsonNode record = lastRecord();
+        Map<String, Object> record = lastRecord();
         assertNotNull(record);
-        assertTrue(record.get("operatorUserId").isNull(),
+        assertTrue(isNull(record, "operatorUserId"),
                 "解析失败时 operator 字段应为空: " + record.get("operatorUserId"));
-        assertEquals("/demo/42", record.get("requestUri").asText());
-        assertEquals("query", record.get("operation").asText());
+        assertEquals("/demo/42", text(record, "requestUri"));
+        assertEquals("query", text(record, "operation"));
     }
 
     @Test
@@ -187,17 +186,12 @@ class OperateLogBoot3BusinessZeroImpactTest {
         assertTrue(appender.list.isEmpty(), "Handler 故障时不应有成功落地的记录");
     }
 
-    private JsonNode lastRecord() {
-        JsonNode last = null;
+    private Map<String, Object> lastRecord() {
+        Map<String, Object> last = null;
         for (ILoggingEvent event : appender.list) {
             String message = event.getFormattedMessage();
             if (message.startsWith(LOG_PREFIX)) {
-                try {
-                    last = MAPPER.readTree(message.substring(LOG_PREFIX.length())
-                            .getBytes(StandardCharsets.UTF_8));
-                } catch (Exception ex) {
-                    throw new IllegalStateException("operate-log line is not valid JSON", ex);
-                }
+                last = LogRecords.parse(message.substring(LOG_PREFIX.length()));
             }
         }
         return last;

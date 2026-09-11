@@ -1,6 +1,5 @@
 package io.github.devoracode.operatelog.boot;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.devoracode.operatelog.aspect.OperateLogAspect;
 import io.github.devoracode.operatelog.boot.servlet.jakarta.OperateLogJakartaClientIpResolver;
 import io.github.devoracode.operatelog.boot.servlet.jakarta.OperateLogJakartaHttpContextResolver;
@@ -14,9 +13,9 @@ import io.github.devoracode.operatelog.resolver.AnonymousOperatorResolver;
 import io.github.devoracode.operatelog.resolver.ClientIpResolver;
 import io.github.devoracode.operatelog.resolver.HttpContextResolver;
 import io.github.devoracode.operatelog.resolver.OperatorResolver;
-import io.github.devoracode.operatelog.sanitizer.JacksonSensitiveDataMasker;
+import io.github.devoracode.operatelog.sanitizer.ForySensitiveDataMasker;
 import io.github.devoracode.operatelog.sanitizer.SensitiveDataMasker;
-import io.github.devoracode.operatelog.serializer.JacksonOperateLogSerializer;
+import io.github.devoracode.operatelog.serializer.ForyOperateLogSerializer;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import io.github.devoracode.operatelog.spel.DefaultSpelEngine;
 import io.github.devoracode.operatelog.spel.SpelEngine;
@@ -39,8 +38,8 @@ import org.springframework.context.annotation.Configuration;
  * 因此每个 bean 的取舍只取决于 classpath 与「用户是否已提供同类型 bean」，与 bean 方法、内部类的
  * 声明顺序无关，可任意重排；{@link ConditionalOnMissingBean} 只负责让位给用户自定义 bean。</p>
  *
- * <p><b>硬性纪律</b>：条件 bean 方法的返回 / 参数类型只能用 core 接口、{@link OperateLogProperties}、
- * {@link ObjectMapper} 等跨栈类型——Spring 用 ASM 解析方法签名，签名里出现具体栈实现类会在条件
+ * <p><b>硬性纪律</b>：条件 bean 方法的返回 / 参数类型只能用 core 接口与 {@link OperateLogProperties}
+ * 等跨栈类型——Spring 用 ASM 解析方法签名，签名里出现具体栈实现类会在条件
  * 未命中时触发类加载失败，所以栈专属类型只能在方法体内 {@code new}，且
  * {@code @ConditionalOnClass} / {@code @ConditionalOnMissingClass} 一律写成字符串形式。</p>
  *
@@ -67,20 +66,18 @@ public class OperateLogAutoConfiguration {
             return new AnonymousOperatorResolver();
         }
 
-        /** 基于 Jackson 的序列化器：复用宿主 ObjectMapper。 */
+        /** 默认序列化器：用组件自带的 Fory JSON，不依赖宿主 Jackson（Boot 4 已换成 Jackson 3）。 */
         @Bean
         @ConditionalOnMissingBean(OperateLogSerializer.class)
-        public OperateLogSerializer operateLogSerializer(ObjectMapper objectMapper) {
-            return new JacksonOperateLogSerializer(objectMapper);
+        public OperateLogSerializer operateLogSerializer() {
+            return new ForyOperateLogSerializer();
         }
 
-        /** 基于 Jackson JSON 树的敏感数据脱敏器。 */
+        /** 基于 Fory JSON 动态树的脱敏器：只替换命中字段名的值。 */
         @Bean
         @ConditionalOnMissingBean(SensitiveDataMasker.class)
-        public SensitiveDataMasker operateLogSensitiveDataMasker(ObjectMapper objectMapper,
-                                                                 OperateLogProperties properties) {
-            return new JacksonSensitiveDataMasker(objectMapper,
-                    properties.getMask().getFields(),
+        public SensitiveDataMasker operateLogSensitiveDataMasker(OperateLogProperties properties) {
+            return new ForySensitiveDataMasker(properties.getMask().getFields(),
                     properties.getMask().getMaskText());
         }
 
@@ -105,8 +102,8 @@ public class OperateLogAutoConfiguration {
         /** 默认处理器：单行 JSON 输出到 SLF4J。 */
         @Bean
         @ConditionalOnMissingBean(OperateLogHandler.class)
-        public OperateLogHandler operateLogHandler(ObjectMapper objectMapper) {
-            return new DefaultOperateLogHandler(objectMapper);
+        public OperateLogHandler operateLogHandler() {
+            return new DefaultOperateLogHandler();
         }
 
         /** 操作日志切面：组装上述全部组件。 */

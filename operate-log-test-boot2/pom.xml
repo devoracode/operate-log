@@ -1,0 +1,60 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.devoracode</groupId>
+        <artifactId>operate-log</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>operate-log-test-boot2</artifactId>
+
+    <name>operate-log-test-boot2</name>
+    <description>Boot 2.x 冒烟示例（javax 栈），不参与发布与二进制兼容检查。</description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <japicmp.skip>true</japicmp.skip>
+    </properties>
+
+    <dependencies>
+        <!-- 故意不 import Boot BOM：版本全部来自 starter-web 传递依赖，观察宿主自身解析结果 -->
+        <dependency>
+            <groupId>io.github.devoracode</groupId>
+            <artifactId>operate-log-spring-boot-starter</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <version>${spring.boot2.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <version>${spring.boot2.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot2.version}</version>
+                <configuration>
+                    <mainClass>io.github.devoracode.operatelog.test.boot2.OperateLogBoot2TestApplication</mainClass>
+                </configuration>
+            </plugin>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>8</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,71 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.devoracode</groupId>
+        <artifactId>operate-log</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>operate-log-test-boot3</artifactId>
+
+    <name>operate-log-test-boot3</name>
+    <description>Boot 3.x 冒烟示例（jakarta 栈），不参与发布与二进制兼容检查。</description>
+
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <japicmp.skip>true</japicmp.skip>
+    </properties>
+
+    <!-- import Boot 3 BOM，jackson / logback / slf4j 全部由 BOM 定版；
+         core 的 Spring / SLF4J 是 optional，不会参与调解 -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring.boot3.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.devoracode</groupId>
+            <artifactId>operate-log-spring-boot-starter</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot3.version}</version>
+                <configuration>
+                    <mainClass>io.github.devoracode.operatelog.test.boot3.OperateLogBoot3TestApplication</mainClass>
+                </configuration>
+            </plugin>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>17</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

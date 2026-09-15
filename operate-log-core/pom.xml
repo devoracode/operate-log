@@ -1,0 +1,99 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.github.devoracode</groupId>
+        <artifactId>operate-log</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>operate-log-core</artifactId>
+
+    <name>operate-log-core</name>
+    <description>
+        operate-log 核心：注解、AOP 切面、上下文模型、SpEL 引擎、序列化、脱敏、载荷防护、扩展点接口。
+    </description>
+
+    <!--
+        依赖边界：宿主必然提供的（Spring / SLF4J / Jackson）标 optional，不向消费者传递版本；
+        宿主不必然提供的（aspectjweaver / commons-lang3）保留 compile 传递。
+        版本 == Boot 2.7.18 基线，只作为下界，不得更高（详见根 POM）。
+    -->
+    <dependencies>
+        <!-- Spring / SLF4J / Jackson：宿主必然提供，optional 只参与本模块编译 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-core</artifactId>
+            <version>${spring.framework.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-aop</artifactId>
+            <version>${spring.framework.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <version>${spring.framework.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-expression</artifactId>
+            <version>${spring.framework.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- jackson-databind / jsr310：宿主通过 spring-boot-starter-json 提供，optional 不传递 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <!-- jackson-datatype-jsr310：Java 8 时间类型序列化 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+            <version>${jackson.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
+            <version>${aspectj.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>${commons-lang3.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <release>8</release>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

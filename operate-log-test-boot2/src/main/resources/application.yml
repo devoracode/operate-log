@@ -1,0 +1,30 @@
+operate-log:
+  application: operate-log-test
+  environment: test
+  version: 1.0.0-SNAPSHOT
+  trace-id-mdc-key: traceId # traceId 的 MDC key，可对齐链路追踪体系（如 trace_id）
+  http:
+    trust-proxy: false
+    capture-headers: false
+  mask:
+    enabled: true
+    mask-text: "******"
+    fields:
+      - password
+      - passwd
+      - pwd
+      - token
+      - accessToken
+      - refreshToken
+      - authorization
+      - cookie
+      - set-cookie
+      - secret
+      - clientSecret
+  spel:
+    enabled: true
+    cache-size: 1024
+  payload:
+    max-request-length: 2048
+    max-response-length: 2048
+    max-error-stack-length: 4096

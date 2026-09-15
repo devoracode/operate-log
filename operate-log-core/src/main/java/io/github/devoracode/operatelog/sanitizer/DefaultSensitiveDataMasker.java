@@ -21,6 +21,9 @@ import java.util.Set;
  *
  * <p>非 JSON 文本无法定位字段名，解析失败即原样落地；
  * 需要别的脱敏策略（如手机号部分掩码）时注册自定义 {@link SensitiveDataMasker} bean 覆盖。</p>
+ *
+ * <p>同时覆写 {@link #maskQuery(String)}：对 URL query string 按参数名匹配并替换敏感值，
+ * 复用同一份敏感字段集合与替换文本。</p>
  */
 public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSensitiveDataMasker.class);
@@ -57,6 +60,37 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
             }
             return content;
         }
+    }
+
+    /**
+     * 对 URL query string（{@code name=value&...}）中的敏感参数值进行掩码。
+     * 按参数名匹配（忽略大小写），命中时将值替换为 maskText。
+     */
+    @Override
+    public String maskQuery(String query) {
+        if (StringUtils.isBlank(query) || this.sensitiveFields.isEmpty()) {
+            return query;
+        }
+        StringBuilder result = new StringBuilder(query.length());
+        boolean changed = false;
+        String[] pairs = query.split("&");
+        for (int i = 0; i < pairs.length; i++) {
+            if (i > 0) {
+                result.append('&');
+            }
+            String pair = pairs[i];
+            int eq = pair.indexOf('=');
+            if (eq > 0) {
+                String name = pair.substring(0, eq);
+                if (this.sensitiveFields.contains(name.toLowerCase(Locale.ROOT))) {
+                    result.append(name).append('=').append(this.maskText);
+                    changed = true;
+                    continue;
+                }
+            }
+            result.append(pair);
+        }
+        return changed ? result.toString() : query;
     }
 
     /**

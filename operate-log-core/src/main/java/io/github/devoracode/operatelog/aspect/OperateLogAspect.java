@@ -275,6 +275,11 @@ public class OperateLogAspect {
             requestBody = this.sensitiveDataMasker.mask(requestBody);
             responseBody = this.sensitiveDataMasker.mask(responseBody);
         }
+        // query string 掩码：复用敏感字段集合按参数名匹配，与 JSON 脱敏并列执行
+        String requestQuery = httpContext == null ? null : httpContext.getQuery();
+        if (this.maskEnabled && requestQuery != null) {
+            requestQuery = this.sensitiveDataMasker.maskQuery(requestQuery);
+        }
         // 截断在脱敏之后执行：无论脱敏使内容变长还是变短，落地的最终体积都不越界
         requestHeaders = this.payloadPolicy.truncateRequest(requestHeaders);
         requestBody = this.payloadPolicy.truncateRequest(requestBody);
@@ -298,7 +303,7 @@ public class OperateLogAspect {
                 .requestMethod(httpContext == null ? null : httpContext.getMethod())
                 .requestUrl(httpContext == null ? null : httpContext.getUrl())
                 .requestUri(httpContext == null ? null : httpContext.getUri())
-                .requestQuery(httpContext == null ? null : httpContext.getQuery())
+                .requestQuery(requestQuery)
                 .requestHeaders(requestHeaders)
                 .requestBody(requestBody)
                 .responseBody(responseBody)

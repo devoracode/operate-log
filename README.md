@@ -285,14 +285,13 @@ Filter → DispatcherServlet → Interceptor#preHandle
 
 ## 敏感数据脱敏
 
-- 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段。
-- 实现为 **JSON 树递归**（Jackson `JsonNode`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层。
+- 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段以及 `requestQuery`（URL 查询参数）。JSON 字段采用 **JSON 树递归**（Jackson `JsonNode`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层；query string 按参数名匹配，复用同一份敏感字段集合。
 - 一个敏感字段都没命中时返回原文，不做无谓的重写（避免数字与格式漂移）。
 - 字段名匹配**忽略大小写**（`Password` / `PASSWORD` / `password` 均脱敏）。
 - 命中字段的值替换为 `mask-text`（默认 `******`）。
 - 待脱敏内容非 JSON 或脱敏过程异常时**原样返回**，不阻断日志流程。
 - 敏感字段集合通过 `operate-log.mask.fields` 扩展。
-- **作用边界**：脱敏仅作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段。`requestUrl` / `requestQuery`（URL 及查询参数）、`errorMessage` / `errorStack`（异常消息与堆栈）**不经过脱敏管道**。请勿在 URL 中传递敏感参数（如 `?access_token=...`）；如业务存在此类场景，请注册自定义 `SensitiveDataMasker` 或 `HttpContextResolver` 对 query 做参数级掩码。异常消息可能内嵌 SQL 与参数值（JDBC / MyBatis 场景），有需要的场景可用自定义 `OperateLogHandler` 做二次清洗。
+- **作用边界**：脱敏作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段以及 `requestQuery`（URL 查询参数，按参数名复用同一份敏感字段集合掩码）。`requestUrl`（不含 query 的完整 URL）、`errorMessage` / `errorStack`（异常消息与堆栈）**不经过脱敏管道**。异常消息可能内嵌 SQL 与参数值（JDBC / MyBatis 场景），有需要的场景可用自定义 `OperateLogHandler` 做二次清洗。
 
 ## 扩展点
 

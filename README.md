@@ -27,7 +27,7 @@
 | 双栈兼容 | 单一 Starter 同时支持 Spring Boot 2.x（`javax.servlet`）与 3.x（`jakarta.servlet`），按宿主 classpath 自动条件装配；非 Web 环境自动降级为空实现 |
 | 记录时机 | `recordOn = ALWAYS / SUCCESS / ERROR` 直观过滤「仅成功 / 仅失败」，零 SpEL 开销，与 `condition` 取交集 |
 | SpEL 表达式 | 条件过滤、业务 ID 提取、描述模板（`#{...}` 模板语法） |
-| 敏感数据脱敏 | JSON 树递归脱敏，字段名忽略大小写，脱敏字段与替换文本可配置 |
+| 敏感数据脱敏 | JSON 树递归脱敏 + query string 参数名掩码，字段名忽略大小写，脱敏字段与替换文本可配置 |
 | 全链路关联 | traceId 取 MDC，key 可配（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系），缺失时自动生成 UUID |
 | 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
 | 载荷防护 | `requestBody` / `responseBody` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
@@ -196,7 +196,7 @@ operate-log:
   mask:
     enabled: true                 # 是否启用敏感数据脱敏
     mask-text: "******"          # 脱敏替换文本
-    fields:                       # 敏感字段名（匹配时忽略大小写，可增删）
+    fields:                       # 敏感字段名（匹配时忽略大小写；注意是整体替换默认列表，不是追加）
       - password
       - passwd
       - pwd
@@ -230,7 +230,7 @@ operate-log:
 | `operate-log.trace-id-mdc-key` | `traceId` | traceId 的 MDC key。与链路追踪体系的 MDC 写入 key 对齐（Micrometer/Sleuth 常见 `traceId`，OTel logback 桥接常见 `trace_id`）；取不到时自动生成 UUID，配置空白回退默认 key |
 | `operate-log.http.trust-proxy` | `false` | 信任代理头时，客户端 IP 解析顺序：`X-Forwarded-For`（取逗号链第一个）→ `X-Real-IP` → `getRemoteAddr()`；否则直接取 `getRemoteAddr()`。**仅在可信网络边界后开启**，防止客户端伪造 IP |
 | `operate-log.http.capture-headers` | `false` | 开启后采集全部请求头写入 `requestHeaders`（JSON 对象）。注意头部可能含 Cookie 等敏感信息，开启后脱敏器会一并处理 |
-| `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段 |
+| `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段以及 `requestQuery`（按参数名匹配） |
 | `operate-log.mask.mask-text` | `******` | 替换文本 |
 | `operate-log.mask.fields` | 见上 | 脱敏字段集合（11 个内置默认值） |
 | `operate-log.spel.enabled` | `true` | SpEL 开关。`false` 时引擎直通：condition 恒通过、description 输出模板原文、businessId 记 `null`，零求值开销 |
@@ -304,7 +304,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 | `HttpContextResolver` | Starter 内置（`javax` / `jakarta` 自动选择） | 定制 HTTP 上下文采集（如接入非 Servlet 容器） |
 | `ClientIpResolver` | Starter 内置（含 `trust-proxy` 逻辑） | 定制客户端 IP 解析策略 |
 | `OperateLogSerializer` | `DefaultOperateLogSerializer`（宿主 `ObjectMapper`） | 更换序列化器（如 Gson、自定义日期格式） |
-| `SensitiveDataMasker` | `DefaultSensitiveDataMasker`（JSON 树递归替换） | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
+| `SensitiveDataMasker` | `DefaultSensitiveDataMasker`（JSON 树递归替换 + query string 参数名掩码） | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
 | `SpelEngine` | `DefaultSpelEngine`（LRU 表达式缓存，支持 `enabled` 直通降级） | 定制表达式引擎（如增加自定义函数） |
 | `PayloadPolicy` | 按 `operate-log.payload.*` 组装 | 定制载荷防护（自定义截断 / 忽略类型逻辑，注册 Bean 即覆盖） |
 

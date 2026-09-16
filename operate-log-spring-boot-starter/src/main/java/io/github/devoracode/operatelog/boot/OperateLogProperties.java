@@ -63,7 +63,9 @@ public class OperateLogProperties {
         /** 命中字段的替换文本。 */
         private String maskText = "******";
 
-        /** 敏感字段名集合，匹配忽略大小写。 */
+        /**
+         * 敏感字段名集合，匹配忽略大小写。注意：配置该项会【整体替换】内置默认列表，不是追加。
+         */
         private Set<String> fields = new LinkedHashSet<String>(Arrays.asList(
                 "password",
                 "passwd",

@@ -1,5 +1,7 @@
 package io.github.devoracode.operatelog.context;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.util.Map;
 
 /**
@@ -16,14 +18,18 @@ public final class OperateLogContextHolder {
     private OperateLogContextHolder() {
     }
 
-    /** 当前线程上下文；切面管辖范围之外返回 {@code null}。 */
+    /**
+     * 当前线程上下文；切面管辖范围之外返回 {@code null}。
+     */
     public static OperateLogContext current() {
         return HOLDER.get();
     }
 
-    /** 追加单个自定义字段；空键忽略。 */
+    /**
+     * 追加单个自定义字段；空键忽略。
+     */
     public static void putExtra(String key, Object value) {
-        if (key == null || key.isEmpty()) {
+        if (StringUtils.isEmpty(key)) {
             return;
         }
         OperateLogContext context = HOLDER.get();
@@ -33,7 +39,9 @@ public final class OperateLogContextHolder {
         context.getExtra().put(key, value);
     }
 
-    /** 批量追加自定义字段；{@code null} 或空集合忽略。 */
+    /**
+     * 批量追加自定义字段；{@code null} 或空集合忽略。
+     */
     public static void putExtras(Map<String, ?> extras) {
         if (extras == null || extras.isEmpty()) {
             return;
@@ -45,12 +53,16 @@ public final class OperateLogContextHolder {
         context.getExtra().putAll(extras);
     }
 
-    /** 绑定上下文。<b>框架内部使用</b>，业务代码请勿调用。 */
+    /**
+     * 绑定上下文。<b>框架内部使用</b>，业务代码请勿调用。
+     */
     public static void bind(OperateLogContext context) {
         HOLDER.set(context);
     }
 
-    /** 解绑当前线程上下文。<b>框架内部使用</b>，业务代码请勿调用。 */
+    /**
+     * 解绑当前线程上下文。<b>框架内部使用</b>，业务代码请勿调用。
+     */
     public static void unbind() {
         HOLDER.remove();
     }

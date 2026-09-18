@@ -64,20 +64,13 @@ public class OperateLogProperties {
         private String maskText = "******";
 
         /**
-         * 敏感字段名集合，匹配忽略大小写。注意：配置该项会【整体替换】内置默认列表，不是追加。
+         * 在默认字段之外<b>追加</b>的敏感字段名，匹配忽略大小写。
+         * 与 {@link io.github.devoracode.operatelog.sanitizer.DefaultSensitiveDataMasker#DEFAULT_FIELDS}
+         * 内置的 11 项（password / passwd / pwd / token / accessToken / refreshToken /
+         * authorization / cookie / set-cookie / secret / clientSecret）取并集后生效：
+         * 默认字段始终脱敏，无法通过配置移除。
          */
-        private Set<String> fields = new LinkedHashSet<String>(Arrays.asList(
-                "password",
-                "passwd",
-                "pwd",
-                "token",
-                "accessToken",
-                "refreshToken",
-                "authorization",
-                "cookie",
-                "set-cookie",
-                "secret",
-                "clientSecret"));
+        private Set<String> fields = new LinkedHashSet<String>();
     }
 
     @Data
@@ -94,26 +87,35 @@ public class OperateLogProperties {
     public static class Payload {
 
         /** requestBody / requestHeaders 最大字符数（含截断标记），<=0 不截断。 */
-        private int maxRequestLength = 2048;
+        private int maxRequestLength = 0;
 
         /** responseBody 最大字符数（含截断标记），<=0 不截断。 */
-        private int maxResponseLength = 2048;
+        private int maxResponseLength = 0;
 
-        /** errorStack 最大字符数，<=0 不截断。 */
-        private int maxErrorStackLength = 4096;
+        /** errorStack / errorMessage 最大字符数（含截断标记），<=0 不截断。 */
+        private int maxErrorLength = 0;
 
         /**
          * 序列化时跳过的参数类型（全限定类名，命中父类或任意接口即算），日志中占位为
          * {@code <IGNORED:类型简名>}。注意是整体替换内置默认列表，不是追加。
+         *
+         * <p>字节数组的 JVM 内部名是 {@code [B}，在 YAML 中必须加引号写成 {@code - "[B"}，
+         * 否则会被当成 YAML 流式序列而解析失败。默认列表已含该项，通常无需自行书写。</p>
          */
         private List<String> ignoreTypes = new ArrayList<String>(Arrays.asList(
                 "javax.servlet.ServletRequest",
                 "javax.servlet.ServletResponse",
+                "javax.servlet.http.HttpSession",
                 "jakarta.servlet.ServletRequest",
                 "jakarta.servlet.ServletResponse",
+                "jakarta.servlet.http.HttpSession",
                 "org.springframework.web.multipart.MultipartFile",
                 "org.springframework.validation.BindingResult",
                 "org.springframework.web.servlet.ModelAndView",
+                // 安全上下文类型：序列化会展开登录态内部结构（credentials / authorities），绕过脱敏
+                "java.security.Principal",
+                "org.springframework.security.core.Authentication",
+                "org.springframework.security.core.context.SecurityContext",
                 "java.io.InputStream",
                 "java.io.OutputStream",
                 "java.io.Reader",

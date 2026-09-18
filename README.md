@@ -28,10 +28,11 @@
 | 记录时机 | `recordOn = ALWAYS / SUCCESS / ERROR` 直观过滤「仅成功 / 仅失败」，零 SpEL 开销，与 `condition` 取交集 |
 | SpEL 表达式 | 条件过滤、业务 ID 提取、描述模板（`#{...}` 模板语法） |
 | 敏感数据脱敏 | JSON 树递归脱敏 + query string 参数名掩码，字段名忽略大小写，脱敏字段与替换文本可配置 |
-| 全链路关联 | traceId 取 MDC，key 可配（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系），缺失时自动生成 UUID |
+| 全链路关联 | traceId 取 MDC，key 可配（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系）；MDC 缺失时生成 UUID 并**回写 MDC**，同一次请求内多条记录共享同一值 |
 | 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
-| 载荷防护 | `requestBody` / `responseBody` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
+| 载荷防护 | `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
 | 自定义字段 | 业务方法内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意业务字段（`extra`），无需扩展记录模型 |
+| 宿主零污染 | 不注册任何 `ObjectMapper` bean，宿主 `spring.jackson.*` 与自定义 `Module` 不受影响；脱敏默认字段始终生效，配置只追加不移除 |
 | 可插拔扩展点 | Handler / 操作人解析 / HTTP 上下文解析 / 序列化 / 脱敏 / SpEL 引擎 / 载荷策略全部可替换（`@ConditionalOnMissingBean` 自动让位） |
 | 异常降级 | 操作人、HTTP 上下文解析失败时降级为 `null`，SpEL 表达式求值失败按方向降级（condition 视为通过、模板输出原文），日志其余字段照常记录 |
 
@@ -58,8 +59,8 @@ Boot 2.x 与 3.x 使用同一坐标（Starter 本体为 Java 8 字节码；Boot 
 </dependency>
 ```
 
-> 日志 JSON 复用宿主 `ObjectMapper`（Boot Web 默认已有；缺失时 Starter 会兜底注册一个带 `JavaTimeModule` 的实例）。
-> **注意**：Starter 内部对宿主 `ObjectMapper` 做了防御性 `copy()` 并补注册 `JavaTimeModule`，因此非 Web 宿主即使提供了未注册 jsr310 的自定义 `ObjectMapper`，日志序列化也不会失败。
+> 日志 JSON 复用宿主 `ObjectMapper`（Boot Web 默认已有）。**Starter 不注册任何 `ObjectMapper` bean**：自动配置按类名排序时本组件排在 Boot 的 `JacksonAutoConfiguration` 之前，一旦注册就会顶掉宿主的 `spring.jackson.*` 与自定义 `Module`，波及宿主自身的 MVC 序列化；日志侧只取宿主 mapper 的防御性副本。
+> **注意**：该副本会补注册 `JavaTimeModule`，因此非 Web 宿主即使提供了未注册 jsr310 的自定义 `ObjectMapper`，日志���列化也不会失败；宿主完全没有 `ObjectMapper` bean 时（非 Web 且未装配 Jackson）才内部自建兜底实例，仍不污染容器。
 > 非 Web 环境（定时任务、后台服务）也能工作：HTTP 相关字段自动降级为 `null`。
 
 ### 2. 标注注解
@@ -177,7 +178,7 @@ public void cancel(String orderNo) { ... }
 - 表达式解析结果带定容 **LRU 缓存**（access-order，默认 1024 条），超出容量自动淘汰最久未使用项，同一注解方法重复调用无重复解析开销。
 - **表达式失败不中断日志**：语法错误 / 空指针访问等按方向降级——`condition` 视为通过（宁可多记不漏记）、`description` 输出模板原文、`businessId` 记 `null`，原因以 debug 日志暴露。
 - `operate-log.spel.enabled=false` 时引擎整体直通（零求值开销）：condition 恒通过、description 输出原文、businessId 为 `null`。
-- **安全约束**：SpEL 表达式仅允许来自**编译期注解常量**（即 `@OperateLog` 的 `description` / `businessId` / `condition` 属性值），**禁止运行时动态注入表达式**（如从数据库、配置文件或外部接口读取表达式文本）。引擎使用 `StandardEvaluationContext`，支持完整 SpEL 能力（包括静态方法调用与构造函数调用），动态注入将导致远程代码执行（RCE）风险。如未来需要动态表达式场景，应迁移至受限的 `SimpleEvaluationContext`。
+- **安全沙箱**：SpEL 表达式仅允许来自**编译期注解常量**（即 `@OperateLog` 的 `description` / `businessId` / `condition` 属性值），**禁止运行时动态注入表达式**（如从数据库、配置文件或外部接口读取表达式文本）。引擎使用受限的 `SimpleEvaluationContext` 沙箱，仅支持变量读取、属性访问与实例方法调用，**不支持**类型引用（`T(...)`）、构造函数、bean 引用与静态方法调用——即使表达式文本被动态注入，也无法执行任意代码，从源头杜绝远程代码执行（RCE）风险。
 
 ## 配置参考（`application.yml`）
 
@@ -196,29 +197,24 @@ operate-log:
   mask:
     enabled: true                 # 是否启用敏感数据脱敏
     mask-text: "******"          # 脱敏替换文本
-    fields:                       # 敏感字段名（匹配时忽略大小写；注意是整体替换默认列表，不是追加）
-      - password
-      - passwd
-      - pwd
-      - token
-      - accessToken
-      - refreshToken
-      - authorization
-      - cookie
-      - set-cookie
-      - secret
-      - clientSecret
+    # fields 为【追加】语义（匹配忽略大小写）：内置 11 项默认字段始终脱敏，配置只往里加。
+    # 默认字段：password / passwd / pwd / token / accessToken / refreshToken /
+    #          authorization / cookie / set-cookie / secret / clientSecret
+    fields:
+      - mobile
+      - idCard
   spel:
     enabled: true                 # SpEL 总开关；false 时引擎直通（见「SpEL 支持」）
     cache-size: 1024              # SpEL 表达式 LRU 缓存大小（最小 64）
   payload:                        # 载荷防护
-    max-request-length: 2048      # requestBody / requestHeaders 最大字符数，<=0 不截断
-    max-response-length: 2048     # responseBody 最大字符数，<=0 不截断
-    max-error-stack-length: 4096  # errorStack 最大字符数，<=0 不截断
+    max-request-length: 0         # requestBody / requestHeaders / requestQuery / userAgent 最大字符数，<=0 不截断
+    max-response-length: 0        # responseBody 最大字符数，<=0 不截断
+    max-error-length: 0           # errorStack / errorMessage 最大字符数，<=0 不截断
     # ignore-types:               # 序列化时跳过的参数类型（全限定类名，命中父类/接口即算）
     #   - org.springframework.web.multipart.MultipartFile
     #   - java.io.InputStream
-    # 注意：配置该项会【整体替换】内置默认列表（默认已含 Servlet 请求/响应、流、字节数组等 12 项）
+    #   - "[B"                    # 字节数组的 JVM 内部名，YAML 中必须加引号
+    # 注意：配置该项会【整体替换】内置默认列表（默认已含 Servlet 请求/响应/会话、安全上下文、流、字节数组等 17 项）
 ```
 
 | 配置项 | 默认值 | 说明 |
@@ -227,25 +223,25 @@ operate-log:
 | `operate-log.application` | `""` | 应用名 |
 | `operate-log.environment` | `""` | 环境标识 |
 | `operate-log.version` | `""` | 版本号 |
-| `operate-log.trace-id-mdc-key` | `traceId` | traceId 的 MDC key。与链路追踪体系的 MDC 写入 key 对齐（Micrometer/Sleuth 常见 `traceId`，OTel logback 桥接常见 `trace_id`）；取不到时自动生成 UUID，配置空白回退默认 key |
+| `operate-log.trace-id-mdc-key` | `traceId` | traceId 的 MDC key。与链路追踪体系的 MDC 写入 key 对齐（Micrometer/Sleuth 常见 `traceId`，OTel logback 桥接常见 `trace_id`）；MDC 取不到时生成 UUID 并回写该 key（收尾清理，只清理本组件写入的值），配置空白回退默认 key |
 | `operate-log.http.trust-proxy` | `false` | 信任代理头时，客户端 IP 解析顺序：`X-Forwarded-For`（取逗号链第一个）→ `X-Real-IP` → `getRemoteAddr()`；否则直接取 `getRemoteAddr()`。**仅在可信网络边界后开启**，防止客户端伪造 IP |
 | `operate-log.http.capture-headers` | `false` | 开启后采集全部请求头写入 `requestHeaders`（JSON 对象）。注意头部可能含 Cookie 等敏感信息，开启后脱敏器会一并处理 |
 | `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段以及 `requestQuery`（按参数名匹配） |
 | `operate-log.mask.mask-text` | `******` | 替换文本 |
-| `operate-log.mask.fields` | 见上 | 脱敏字段集合（11 个内置默认值） |
+| `operate-log.mask.fields` | 空 | 在 11 个内置默认字段之外**追加**的脱敏字段名（匹配忽略大小写）。默认字段始终生效，无法通过配置移除 |
 | `operate-log.spel.enabled` | `true` | SpEL 开关。`false` 时引擎直通：condition 恒通过、description 输出模板原文、businessId 记 `null`，零求值开销 |
 | `operate-log.spel.cache-size` | `1024` | 表达式 LRU 缓存容量（实际生效最小值 64，超出淘汰最久未使用项） |
-| `operate-log.payload.max-request-length` | `2048` | `requestBody` / `requestHeaders` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
-| `operate-log.payload.max-response-length` | `2048` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
-| `operate-log.payload.max-error-stack-length` | `4096` | `errorStack` 最大字符数，`<=0` 不截断 |
-| `operate-log.payload.ignore-types` | 12 项内置 | 序列化参数时跳过的类型（全限定类名，父类/接口命中即算），替换为 `<IGNORED:类型简名>`；配置后整体替换默认列表 |
+| `operate-log.payload.max-request-length` | `0` | `requestBody` / `requestHeaders` / `requestQuery` / `userAgent` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
+| `operate-log.payload.max-response-length` | `0` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
+| `operate-log.payload.max-error-length` | `0` | `errorStack` / `errorMessage` 最大字符数，`<=0` 不截断 |
+| `operate-log.payload.ignore-types` | 17 项内置 | 序列化参数时跳过的类型（全限定类名，父类/接口命中即算），替换为 `<IGNORED:类型简名>`；配置后整体替换默认列表。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
 
 ## 日志输出字段（`OperateLogRecord`）
 
 | 字段 | 来源 | 说明 |
 | --- | --- | --- |
 | `id` | 自动生成 | 日志记录 UUID |
-| `traceId` | MDC（key = `operate-log.trace-id-mdc-key`，默认 `traceId`）/ 自动生成 | 全链路 ID，优先按配置 key 读 MDC（可与 Sleuth / Micrometer / Zipkin 等链路追踪打通），缺失时自动生成 UUID |
+| `traceId` | MDC（key = `operate-log.trace-id-mdc-key`，默认 `traceId`）/ 自动生成 | 链路 ID：优先按配置 key 读 MDC（与 Sleuth / Micrometer / Zipkin 等打通）；MDC 缺失时由本组件生成 UUID 并**回写 MDC**，同一次请求内多个 `@OperateLog` 方法共享同一值（收尾清理，不覆盖宿主已有值）。未接入链路追踪体系时**不跨服务**，仅保证单次请求内关联 |
 | `application` / `environment` / `version` | 配置 | 应用、环境、版本 |
 | `module` / `operation` / `operationType` | 注解 | 模块、操作、操作类型 |
 | `description` | 注解 + SpEL | 模板求值后的描述 |
@@ -259,11 +255,11 @@ operate-log:
 | `success` | 运行时 | 方法是否正常返回 |
 | `costTime` | 运行时 | 耗时（毫秒） |
 | `startTime` / `endTime` | 运行时 | 起止时间（`Instant`，ISO-8601） |
-| `errorType` / `errorMessage` / `errorStack` | 运行时 | 异常类名 / message / 堆栈（按 `payload.max-error-stack-length` 截断），正常时为 `null` |
+| `errorType` / `errorMessage` / `errorStack` | 运行时 | 异常类名 / message / 堆栈（message 与堆栈按 `payload.max-error-length` 截断），正常时为 `null` |
 | `extra` | `OperateLogContextHolder#putExtra` | 业务自定义字段（Map），方法内写入、随记录落地；未写入时为 `null` |
 
 > 所有可能为 `null` 的字段在 JSON 中保留为 `null` 值，便于下游解析 schema 稳定。
-> `requestBody` / `responseBody` / `requestHeaders` / `errorStack` 受 `payload.*` 长度上限保护，超限截断。
+> `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 均受 `payload.*` 长度上限保护，超限截断。
 
 ## 为什么没有 `httpStatus`
 
@@ -286,11 +282,12 @@ Filter → DispatcherServlet → Interceptor#preHandle
 ## 敏感数据脱敏
 
 - 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段以及 `requestQuery`（URL 查询参数）。JSON 字段采用 **JSON 树递归**（Jackson `JsonNode`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层；query string 按参数名匹配，复用同一份敏感字段集合。
+- query 参数名先按 `application/x-www-form-urlencoded` **解码再匹配**，`%74oken=...` / `Pass%77ord=...` 这类编码写法与明文同名同等命中，防止编码绕过；输出仍保留参数名原始写法，只替换值。
 - 一个敏感字段都没命中时返回原文，不做无谓的重写（避免数字与格式漂移）。
 - 字段名匹配**忽略大小写**（`Password` / `PASSWORD` / `password` 均脱敏）。
 - 命中字段的值替换为 `mask-text`（默认 `******`）。
 - 待脱敏内容非 JSON 或脱敏过程异常时**原样返回**，不阻断日志流程。
-- 敏感字段集合通过 `operate-log.mask.fields` 扩展。
+- 敏感字段集合通过 `operate-log.mask.fields` **追加**。11 个内置默认字段（`password` / `passwd` / `pwd` / `token` / `accessToken` / `refreshToken` / `authorization` / `cookie` / `set-cookie` / `secret` / `clientSecret`）**始终脱敏，配置无法移除**——避免「只想加一个字段」却把既有脱敏项一起关掉。
 - **作用边界**：脱敏作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段以及 `requestQuery`（URL 查询参数，按参数名复用同一份敏感字段集合掩码）。`requestUrl`（不含 query 的完整 URL）、`errorMessage` / `errorStack`（异常消息与堆栈）**不经过脱敏管道**。异常消息可能内嵌 SQL 与参数值（JDBC / MyBatis 场景），有需要的场景可用自定义 `OperateLogHandler` 做二次清洗。
 
 ## 扩展点
@@ -449,6 +446,17 @@ OperateLogAspect @Around 拦截
 - CGLIB 代理 + 注解仅标注接口方法（advice 不织入，见「注解属性」处的说明；JDK 代理场景已支持接口注解查找）。
 - 不记录 HTTP 状态码：切面时刻取不到最终值，`ResponseEntity` / `@ResponseStatus` /
   `@ControllerAdvice` 改写的状态一律不在审计日志里，见「为什么没有 `httpStatus`」。
+- `success` 的语义边界是「业务方法未抛异常」，**不含事务提交结果**：切面顺序已显式声明为
+  `Ordered.LOWEST_PRECEDENCE`（不再依赖默认值推断），但与 `@Transactional` 的默认顺序**同值**，
+  两级通知的相对次序不由本组件保证。事务提交失败并回滚时，日志可能已写为 `success = true`。
+  审计判据需要与事务结果一致时，请勿直接采信 `success`，应为事务通知显式指定更低 order
+  （使其位于本切面外层），或改用自定义 `OperateLogHandler` 延后落地。
+- traceId **不跨服务**：未接入 Sleuth / Micrometer / OTel 等链路追踪体系时，本组件生成的 UUID
+  仅保证「同一次请求内多条记录共享」（生成后回写 MDC、收尾清理），不具备跨进程传递能力。
+- `extra` 与 traceId 基于 **ThreadLocal**：业务方法内切换线程的场景（`@Async`、自建线程池、
+  `CompletableFuture` 默认线程池等）不会自动传播——切线程后 `OperateLogContextHolder#putExtra`
+  写入的字段不再归属当前记录，traceId 关联同样失效。跨线程需要时自行传递上下文
+  （如以 `TaskDecorator` 包装任务，或在异步方法内重新 `putExtra`）。
 
 > 已实现（原计划项）：载荷长度截断（`operate-log.payload.*`）、序列化忽略类型与逐元素降级、
 > `operate-log.spel.enabled` 生效（引擎直通降级）、表达式缓存 LRU 化、`extra` 自定义字段通道、

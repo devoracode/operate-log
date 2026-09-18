@@ -23,6 +23,7 @@ import io.github.devoracode.operatelog.serializer.DefaultOperateLogSerializer;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import io.github.devoracode.operatelog.spel.DefaultSpelEngine;
 import io.github.devoracode.operatelog.spel.SpelEngine;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
@@ -41,12 +42,16 @@ import org.springframework.context.annotation.Configuration;
  * <p>硬性纪律：条件 bean 方法的返回 / 参数类型只能用 core 接口与跨栈类型
  * （签名里出现栈专属实现类会在条件未命中时触发类加载失败）；
  * {@code @ConditionalOnClass} / {@code @ConditionalOnMissingClass} 一律写成字符串形式。</p>
+ *
+ * <p>边界纪律：本配置<b>不注册</b> {@link ObjectMapper} bean。自动配置按类名排序，
+ * 本类（{@code io.github...}）排在 Boot 的 {@code JacksonAutoConfiguration}（{@code org.springframework.boot...}）
+ * 之前，一旦注册就会顶掉宿主的 {@code spring.jackson.*} 与自定义 Module，波及宿主自身的
+ * MVC 序列化。日志侧只取宿主 mapper 的防御性副本，宿主完全没有时才自建兜底实例。</p>
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(OperateLogProperties.class)
 @ConditionalOnProperty(prefix = "operate-log", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class OperateLogAutoConfiguration {
-
     /**
      * 与 Servlet 栈无关的通用组件。
      * 切面只依赖 {@link HttpContextResolver} / {@link ClientIpResolver} 接口，
@@ -54,8 +59,19 @@ public class OperateLogAutoConfiguration {
      */
     @Configuration(proxyBeanMethods = false)
     static class CommonConfiguration {
+        private final ObjectProvider<ObjectMapper> objectMapperProvider;
+        /**
+         * serializer / masker / handler 三个 bean 共享同一份宿主 mapper 副本，{@code copy()} 只做一次。
+         */
+        private volatile ObjectMapper sharedSafeTimeMapper;
 
-        /** 默认操作人解析器：匿名（返回 {@code null}）。 */
+        CommonConfiguration(ObjectProvider<ObjectMapper> objectMapperProvider) {
+            this.objectMapperProvider = objectMapperProvider;
+        }
+
+        /**
+         * 默认操作人解析器：匿名（返回 {@code null}）。
+         */
         @Bean
         @ConditionalOnMissingBean(OperatorResolver.class)
         public OperatorResolver operateLogOperatorResolver() {
@@ -63,71 +79,69 @@ public class OperateLogAutoConfiguration {
         }
 
         /**
-         * 兜底 {@link ObjectMapper}：宿主（Boot Web）已提供时本 bean 不生效，
-         * 仅非 Web 场景兜底，保证依赖 ObjectMapper 的 bean 能正常创建。
-         */
-        @Bean
-        @ConditionalOnMissingBean(ObjectMapper.class)
-        public ObjectMapper operateLogObjectMapper() {
-            ObjectMapper mapper = new ObjectMapper();
-            mapper.registerModule(new JavaTimeModule());
-            mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-            mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-            return mapper;
-        }
-
-        /**
          * 默认序列化器：用宿主 ObjectMapper 序列化请求/响应体。
-         * 防御性 {@code copy()} 并补注册 {@link JavaTimeModule}：宿主已注册时幂等无副作用，
-         * 未注册时（如非 Web 宿主自定义了不含 jsr310 的 mapper）避免 {@link java.time.Instant}
-         * 等时间类型序列化失败。
+         * 宿主 mapper 经 {@link ObjectProvider} 惰性获取并三 bean 共享（{@code copy()} 只做一次），
+         * 本配置不注册 ObjectMapper bean（理由见类注释）；取到后做防御性 {@code copy()}
+         * 并补注册 {@link JavaTimeModule}，避免 {@link java.time.Instant} 等时间类型序列化失败。
          */
         @Bean
         @ConditionalOnMissingBean(OperateLogSerializer.class)
-        public OperateLogSerializer operateLogSerializer(ObjectMapper objectMapper) {
-            return new DefaultOperateLogSerializer(safeTimeMapper(objectMapper));
+        public OperateLogSerializer operateLogSerializer() {
+            return new DefaultOperateLogSerializer(safeTimeMapper());
         }
 
-        /** 默认脱敏器：在 Jackson JsonNode 动态树上只替换命中字段名的值。 */
+        /**
+         * 默认脱敏器：在 Jackson JsonNode 动态树上只替换命中字段名的值。
+         */
         @Bean
         @ConditionalOnMissingBean(SensitiveDataMasker.class)
-        public SensitiveDataMasker operateLogSensitiveDataMasker(ObjectMapper objectMapper,
-                                                                  OperateLogProperties properties) {
-            return new DefaultSensitiveDataMasker(objectMapper,
+        public SensitiveDataMasker operateLogSensitiveDataMasker(OperateLogProperties properties) {
+            return new DefaultSensitiveDataMasker(safeTimeMapper(),
                     properties.getMask().getFields(),
                     properties.getMask().getMaskText());
         }
 
-        /** 默认 SpEL 引擎（表达式缓存与降级策略见 {@code DefaultSpelEngine}）。 */
+        /**
+         * 默认 SpEL 引擎（表达式缓存与降级策略见 {@code DefaultSpelEngine}）。
+         */
         @Bean
         @ConditionalOnMissingBean(SpelEngine.class)
         public SpelEngine operateLogSpelEngine(OperateLogProperties properties) {
-            return new DefaultSpelEngine(properties.getSpel().getCacheSize(), properties.getSpel().isEnabled());
+            return new DefaultSpelEngine(properties.getSpel().getCacheSize(),
+                    properties.getSpel().isEnabled());
         }
 
-        /** 载荷防护策略：大字段截断 + 忽略类型过滤。 */
+        /**
+         * 载荷防护策略：大字段截断 + 忽略类型过滤。
+         */
         @Bean
         @ConditionalOnMissingBean(PayloadPolicy.class)
         public PayloadPolicy operateLogPayloadPolicy(OperateLogProperties properties) {
             OperateLogProperties.Payload payload = properties.getPayload();
             return new PayloadPolicy(payload.getMaxRequestLength(),
                     payload.getMaxResponseLength(),
-                    payload.getMaxErrorStackLength(),
+                    payload.getMaxErrorLength(),
                     payload.getIgnoreTypes());
         }
 
         /**
-         * 默认处理器：单行 JSON 输出到 SLF4J。
-         * 防御性 {@code copy()} 并补注册 {@link JavaTimeModule}，理由同序列化器。
+         * 默认处理器：单行 JSON 输出到 SLF4J；宿主 mapper 的获取方式同序列化器（三 bean 共享同一副本）。
          */
         @Bean
         @ConditionalOnMissingBean(OperateLogHandler.class)
-        public OperateLogHandler operateLogHandler(ObjectMapper objectMapper) {
-            return new DefaultOperateLogHandler(safeTimeMapper(objectMapper));
+        public OperateLogHandler operateLogHandler() {
+            return new DefaultOperateLogHandler(safeTimeMapper());
         }
 
-        /** 操作日志切面：组装上述全部组件。 */
+        /**
+         * 操作日志切面：组装上述全部组件。
+         *
+         * <p>AspectJ 类名用字符串形式（理由见类注释）。宿主关闭 AOP 自动装配
+         * （{@code spring.aop.auto=false}）时本 bean 仍会创建但不会被织入，
+         * Spring 不报错、日志静默缺失，需宿主自行确认。</p>
+         */
         @Bean
+        @ConditionalOnClass(name = "org.aspectj.lang.annotation.Aspect")
         @ConditionalOnMissingBean(OperateLogAspect.class)
         public OperateLogAspect operateLogAspect(OperateLogHandler handler,
                                                  OperatorResolver operatorResolver,
@@ -148,36 +162,61 @@ public class OperateLogAutoConfiguration {
                     properties.getVersion(),
                     properties.getMask().isEnabled(),
                     payloadPolicy,
-                    properties.getTraceIdMdcKey());
+                    properties.getTraceIdMdcKey(),
+                    properties.getSpel().getCacheSize() * 4);
         }
 
         /**
-         * 防御性 ObjectMapper：{@code copy()} 保留宿主全部配置，补注册 {@link JavaTimeModule}
-         * 保证 {@link java.time.Instant} 等时间类型可序列化。已注册时幂等无副作用。
+         * 日志侧共享 ObjectMapper：首次调用时取宿主 bean 的防御性副本（保留宿主全部配置，补注册
+         * {@link JavaTimeModule} 保证 {@link java.time.Instant} 等时间类型可序列化，已注册时幂等）；
+         * 宿主完全没有 ObjectMapper 时（非 Web 且未装配 Jackson）自建兜底实例。
+         * 三个消费 bean 共享同一实例，{@code copy()} 全程只做一次；惰性取值保持 mapper
+         * 解析时点在消费 bean 创建期，不在配置类构造期。
          */
-        private ObjectMapper safeTimeMapper(ObjectMapper objectMapper) {
-            return objectMapper.copy().registerModule(new JavaTimeModule());
+        private ObjectMapper safeTimeMapper() {
+            ObjectMapper cached = this.sharedSafeTimeMapper;
+            if (cached != null) {
+                return cached;
+            }
+            ObjectMapper hostMapper = this.objectMapperProvider.getIfAvailable();
+            ObjectMapper mapper;
+            if (hostMapper != null) {
+                mapper = hostMapper.copy().registerModule(new JavaTimeModule());
+            } else {
+                mapper = new ObjectMapper();
+                mapper.registerModule(new JavaTimeModule());
+                mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+                mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+            }
+            this.sharedSafeTimeMapper = mapper;
+            return mapper;
         }
     }
 
-    /** jakarta 栈（Boot 3.x）装配：classpath 存在 {@code jakarta.servlet} 时生效。 */
+    /**
+     * jakarta 栈（Boot 3.x）装配：classpath 存在 {@code jakarta.servlet} 时生效。
+     */
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = "jakarta.servlet.http.HttpServletRequest")
     static class JakartaServletConfiguration {
-
-        /** jakarta 栈客户端 IP 解析器（返回类型必须是 core 接口，理由见类注释）。 */
+        /**
+         * jakarta 栈客户端 IP 解析器（返回类型必须是 core 接口，理由见类注释）。
+         */
         @Bean
         @ConditionalOnMissingBean(ClientIpResolver.class)
         public ClientIpResolver operateLogJakartaClientIpResolver(OperateLogProperties properties) {
             return new OperateLogJakartaClientIpResolver(properties.getHttp().isTrustProxy());
         }
 
-        /** jakarta 栈 HTTP 上下文解析器。 */
+        /**
+         * jakarta 栈 HTTP 上下文解析器。
+         */
         @Bean
         @ConditionalOnMissingBean(HttpContextResolver.class)
         public HttpContextResolver operateLogJakartaHttpContextResolver(ClientIpResolver clientIpResolver,
-                                                                       OperateLogProperties properties) {
-            return new OperateLogJakartaHttpContextResolver(clientIpResolver, properties.getHttp().isCaptureHeaders());
+                                                                        OperateLogProperties properties) {
+            return new OperateLogJakartaHttpContextResolver(clientIpResolver,
+                    properties.getHttp().isCaptureHeaders());
         }
     }
 
@@ -189,20 +228,24 @@ public class OperateLogAutoConfiguration {
     @ConditionalOnClass(name = "javax.servlet.http.HttpServletRequest")
     @ConditionalOnMissingClass("jakarta.servlet.http.HttpServletRequest")
     static class JavaxServletConfiguration {
-
-        /** javax 栈客户端 IP 解析器（返回类型必须是 core 接口，理由见类注释）。 */
+        /**
+         * javax 栈客户端 IP 解析器（返回类型必须是 core 接口，理由见类注释）。
+         */
         @Bean
         @ConditionalOnMissingBean(ClientIpResolver.class)
         public ClientIpResolver operateLogJavaxClientIpResolver(OperateLogProperties properties) {
             return new OperateLogJavaxClientIpResolver(properties.getHttp().isTrustProxy());
         }
 
-        /** javax 栈 HTTP 上下文解析器。 */
+        /**
+         * javax 栈 HTTP 上下文解析器。
+         */
         @Bean
         @ConditionalOnMissingBean(HttpContextResolver.class)
         public HttpContextResolver operateLogJavaxHttpContextResolver(ClientIpResolver clientIpResolver,
                                                                       OperateLogProperties properties) {
-            return new OperateLogJavaxHttpContextResolver(clientIpResolver, properties.getHttp().isCaptureHeaders());
+            return new OperateLogJavaxHttpContextResolver(clientIpResolver,
+                    properties.getHttp().isCaptureHeaders());
         }
     }
 
@@ -211,12 +254,11 @@ public class OperateLogAutoConfiguration {
      * 空实现保证 {@link OperateLogAspect} 的构造注入永远成立。
      */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnMissingClass({
-            "jakarta.servlet.http.HttpServletRequest",
-            "javax.servlet.http.HttpServletRequest"})
+    @ConditionalOnMissingClass({"jakarta.servlet.http.HttpServletRequest", "javax.servlet.http.HttpServletRequest"})
     static class FallbackConfiguration {
-
-        /** 兜底客户端 IP 解析器：恒返回 {@code null}。 */
+        /**
+         * 兜底客户端 IP 解析器：恒返回 {@code null}。
+         */
         @Bean
         @ConditionalOnMissingBean(ClientIpResolver.class)
         public ClientIpResolver operateLogFallbackClientIpResolver() {
@@ -228,7 +270,9 @@ public class OperateLogAutoConfiguration {
             };
         }
 
-        /** 兜底 HTTP 上下文解析器：恒返回 {@code null}，日志中 HTTP 字段一律为空。 */
+        /**
+         * 兜底 HTTP 上下文解析器：恒返回 {@code null}，日志中 HTTP 字段一律为空。
+         */
         @Bean
         @ConditionalOnMissingBean(HttpContextResolver.class)
         public HttpContextResolver operateLogFallbackHttpContextResolver() {

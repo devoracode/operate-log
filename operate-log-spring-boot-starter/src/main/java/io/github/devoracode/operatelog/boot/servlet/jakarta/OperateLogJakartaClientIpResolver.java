@@ -38,11 +38,11 @@ public class OperateLogJakartaClientIpResolver implements ClientIpResolver {
             if (StringUtils.isNotBlank(forwardedFor)) {
                 // 注意：链首为客户端自报值，伪造风险由可信网络边界承担；
                 // 严格审计场景应自右向左跳过 N 个可信代理节点
-                return StringUtils.substringBefore(forwardedFor, ",").trim();
+                return StringUtils.trim(StringUtils.substringBefore(forwardedFor, ","));
             }
             String realIp = request.getHeader(REAL_IP);
             if (StringUtils.isNotBlank(realIp)) {
-                return realIp.trim();
+                return StringUtils.trim(realIp);
             }
         }
         // 兜底：容器直连地址

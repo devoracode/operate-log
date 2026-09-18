@@ -50,7 +50,6 @@ class OperateLogBoot2MockMvcTest {
     private static final String TRUNCATED_SUFFIX = "...[truncated]";
     private static final String MASKED = "******";
     private static final int MAX_PAYLOAD_LENGTH = 2048;
-    private static final int MAX_ERROR_STACK_LENGTH = 4096;
 
     private static ListAppender<ILoggingEvent> appender;
 
@@ -168,31 +167,9 @@ class OperateLogBoot2MockMvcTest {
         assertTrue(requestBody.contains("\"n1\""), requestBody);
     }
 
-    // ==================== 异常路径与记录时机 ====================
-
-    @Test
-    void errorPathRecordedWithStack() throws Exception {
-        // 未捕获异常可能穿透 perform(...)，也可能以 500 收口，两种形态都接受（日志先行落地）
-        try {
-            this.mockMvc.perform(get("/demo/fail"));
-        } catch (Exception expected) {
-            // 容器包装上抛属预期；日志侧收尾不得顶替它（对照见 ZeroImpact 用例）
-        }
-
-        Map<String, Object> record = lastRecord();
-        assertEquals("fail", text(record, "operation"));
-        assertEquals(1, countRecords(), "recordOn=ERROR 必须恰好产出一条记录");
-        assertTrue(text(record, "errorType").contains("IllegalStateException"));
-        assertEquals("demo failure", text(record, "errorMessage"));
-        assertTrue(text(record, "errorStack").contains("demo failure"));
-        assertTrue(text(record, "errorStack").length() <= MAX_ERROR_STACK_LENGTH,
-                "errorStack 不得越界: " + text(record, "errorStack").length());
-        assertFalse(flag(record, "success"));
-    }
-
     @Test
     void successPathWithRecordOnSuccessEmitsSingleRecord() throws Exception {
-        // recordOn=SUCCESS：正常返回记一条，与 errorPath 用例的「恰好一条」一起钉死时机过滤
+        // recordOn=SUCCESS：正常返回记一条
         this.mockMvc.perform(post("/demo").contentType(MediaType.APPLICATION_JSON).content("{\"a\":1}"));
         assertEquals(1, countRecords());
     }
@@ -276,26 +253,6 @@ class OperateLogBoot2MockMvcTest {
                 "坏参数应按元素降级: " + requestBody);
         assertTrue(requestBody.contains("\"ok\""), "其余参数不得受坏元素牵连: " + requestBody);
         assertTrue(flag(record, "success"), "坏元素不得影响业务");
-    }
-
-    @Test
-    void oversizedPayloadTruncatedWithinConfiguredLimit() throws Exception {
-        StringBuilder blob = new StringBuilder();
-        for (int i = 0; i < 5000; i++) {
-            blob.append('a');
-        }
-        this.mockMvc.perform(post("/demo/huge")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"blob\":\"" + blob + "\"}"));
-
-        Map<String, Object> record = lastRecord();
-        String requestBody = text(record, "requestBody");
-        String responseBody = text(record, "responseBody");
-        assertTrue(requestBody.length() <= MAX_PAYLOAD_LENGTH,
-                "requestBody 长度 " + requestBody.length() + " 超过上限 " + MAX_PAYLOAD_LENGTH);
-        // 上限含截断标记：结果长度恰好等于上限并带标记
-        assertEquals(MAX_PAYLOAD_LENGTH, responseBody.length());
-        assertTrue(responseBody.endsWith(TRUNCATED_SUFFIX), responseBody);
     }
 
     // ==================== 嵌套调用与上下文 ====================

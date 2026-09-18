@@ -9,22 +9,16 @@ operate-log:
   mask:
     enabled: true
     mask-text: "******"
-    fields:
-      - password
-      - passwd
-      - pwd
-      - token
-      - accessToken
-      - refreshToken
-      - authorization
-      - cookie
-      - set-cookie
-      - secret
-      - clientSecret
+    # fields 为【追加】语义：内置 11 项默认字段始终脱敏，此处只列额外需要脱敏的字段名。
+    # 默认字段：password / passwd / pwd / token / accessToken / refreshToken /
+    #          authorization / cookie / set-cookie / secret / clientSecret
+    # fields:
+    #   - mobile
+    #   - idCard
   spel:
     enabled: true
     cache-size: 1024
   payload:
-    max-request-length: 2048
-    max-response-length: 2048
-    max-error-stack-length: 4096
+    max-request-length: 0
+    max-response-length: 0
+    max-error-length: 0

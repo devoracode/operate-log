@@ -12,7 +12,9 @@ import java.lang.annotation.Target;
 /**
  * 标记需要记录操作日志的方法。只识别方法级标注：
  * 类上标注会连带拦截整类方法，噪声与开销不可控。
- * 需要「整类统一配置」时，用 {@code @OperateLog} 作元注解自定义注解。
+ *
+ * <p>注解查找不解析元注解：把 {@code @OperateLog} 标注在自定义注解上，
+ * 再把自定义注解贴到方法上<b>不会生效</b>，必须直接标注 {@code @OperateLog}。</p>
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

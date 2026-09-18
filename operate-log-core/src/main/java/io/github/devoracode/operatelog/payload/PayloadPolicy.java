@@ -1,11 +1,15 @@
 package io.github.devoracode.operatelog.payload;
 
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.ClassUtils;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -16,18 +20,41 @@ import java.util.Set;
  */
 public class PayloadPolicy {
     private static final String TRUNCATED_SUFFIX = "...[truncated]";
+    /**
+     * 参数类型解析缓存上限：单应用参数类型数天然有界，定容 LRU 防热部署下旧 Class 引用滞留。
+     */
+    private static final int IGNORED_TYPE_CACHE_SIZE = 512;
     private final int maxRequestLength;
     private final int maxResponseLength;
-    private final int maxErrorStackLength;
+    /**
+     * errorStack 与 errorMessage 共用同一上限。
+     */
+    private final int maxErrorLength;
     private final Set<String> ignoredTypes;
+    /**
+     * 参数类型 → 命中忽略项的解析缓存（{@link Optional#empty()} 哨兵表示无命中）：
+     * 每个参数每次调用都要走父类链与接口扫描，缓存后降为一次 Map 查询。
+     */
+    private final Map<Class<?>, Optional<String>> ignoredTypeCache = Collections.synchronizedMap(new LinkedHashMap<Class<?>, Optional<String>>(
+            16,
+            0.75f,
+            true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Class<?>, Optional<String>> eldest) {
+            return size() > IGNORED_TYPE_CACHE_SIZE;
+        }
+    });
 
+    /**
+     * @param maxErrorLength errorStack 与 errorMessage 共用的长度上限
+     */
     public PayloadPolicy(int maxRequestLength,
                          int maxResponseLength,
-                         int maxErrorStackLength,
+                         int maxErrorLength,
                          Collection<String> ignoredTypes) {
         this.maxRequestLength = maxRequestLength;
         this.maxResponseLength = maxResponseLength;
-        this.maxErrorStackLength = maxErrorStackLength;
+        this.maxErrorLength = maxErrorLength;
         this.ignoredTypes = normalize(ignoredTypes);
     }
 
@@ -37,7 +64,7 @@ public class PayloadPolicy {
      * 无命中返回原数组，有命中先克隆再替换，不改调用方入参。
      */
     public Object[] filterArguments(Object[] arguments) {
-        if (arguments == null || arguments.length == 0 || this.ignoredTypes.isEmpty()) {
+        if (ArrayUtils.isEmpty(arguments) || this.ignoredTypes.isEmpty()) {
             return arguments;
         }
         Object[] filtered = arguments;
@@ -58,19 +85,39 @@ public class PayloadPolicy {
         return filtered;
     }
 
-    /** 截断 requestBody（requestHeaders 复用本上限）。 */
+    /**
+     * 截断 requestBody（requestHeaders / requestQuery / userAgent 复用本上限）。
+     */
     public String truncateRequest(String value) {
         return truncate(value, this.maxRequestLength);
     }
 
-    /** 截断 responseBody。 */
+    /**
+     * 截断 responseBody。
+     */
     public String truncateResponse(String value) {
         return truncate(value, this.maxResponseLength);
     }
 
-    /** 截断 errorStack。 */
+    /**
+     * 截断 errorStack。
+     */
     public String truncateErrorStack(String value) {
-        return truncate(value, this.maxErrorStackLength);
+        return truncate(value, this.maxErrorLength);
+    }
+
+    /**
+     * 截断 errorMessage，与 errorStack 共用上限。
+     */
+    public String truncateErrorMessage(String value) {
+        return truncate(value, this.maxErrorLength);
+    }
+
+    /**
+     * errorStack 上限；供堆栈打印侧按上限限长写入，避免先撑起完整字符串。
+     */
+    public int getMaxErrorLength() {
+        return this.maxErrorLength;
     }
 
     /**
@@ -86,18 +133,43 @@ public class PayloadPolicy {
             return value;
         }
         int suffixLength = TRUNCATED_SUFFIX.length();
-        if (maxLength <= suffixLength) {
-            // 额度容不下截断标记：守住长度上限，放弃标记
-            return value.substring(0, maxLength);
+        if (maxLength < suffixLength) {
+            // 额度装不下截断标记（严格小于）：守住长度上限，放弃标记
+            return value.substring(0, safeCutIndex(value, maxLength));
         }
-        return value.substring(0, maxLength - suffixLength) + TRUNCATED_SUFFIX;
+        return value.substring(0, safeCutIndex(value, maxLength - suffixLength)) + TRUNCATED_SUFFIX;
+    }
+
+    /**
+     * 截断点落在代理对中间时回退一位：按 UTF-16 code unit 截断可能切裂 high/low surrogate，
+     * 产生孤立 surrogate，下游按 UTF-8 编码时替换为 U+FFFD（乱码）甚至抛异常。
+     */
+    private static int safeCutIndex(String value, int cutIndex) {
+        if (cutIndex <= 0) {
+            return 0;
+        }
+        if (cutIndex < value.length() && Character.isHighSurrogate(value.charAt(cutIndex - 1))) {
+            return cutIndex - 1;
+        }
+        return cutIndex;
     }
 
     /**
      * 查找参数类型在忽略列表中的命中项（类自身 → 父类链 → 全部接口含父接口），
-     * 返回命中的配置类型名，未命中返回 {@code null}。
+     * 返回命中的配置类型名，未命中返回 {@code null}。结果按类型缓存（含未命中哨兵），
+     * 同一参数类型的扫描只做一次。
      */
     private String findIgnoredType(Class<?> type) {
+        Optional<String> cached = this.ignoredTypeCache.get(type);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
+        String matched = resolveIgnoredType(type);
+        this.ignoredTypeCache.putIfAbsent(type, Optional.ofNullable(matched));
+        return matched;
+    }
+
+    private String resolveIgnoredType(Class<?> type) {
         for (Class<?> current = type; current != null; current = current.getSuperclass()) {
             if (this.ignoredTypes.contains(current.getName())) {
                 return current.getName();
@@ -110,11 +182,12 @@ public class PayloadPolicy {
         return null;
     }
 
-    /** 递归当前类声明的接口及其父接口，返回命中的接口全限定名，未命中返回 {@code null}。 */
+    /**
+     * 递归当前类声明的接口及其父接口，返回命中的接口全限定名，未命中返回 {@code null}。
+     */
     private String findIgnoredInterface(Class<?> type) {
         Class<?>[] interfaces = type.getInterfaces();
-        for (int i = 0; i < interfaces.length; i++) {
-            Class<?> interfaceClass = interfaces[i];
+        for (Class<?> interfaceClass : interfaces) {
             if (this.ignoredTypes.contains(interfaceClass.getName())) {
                 return interfaceClass.getName();
             }
@@ -133,7 +206,7 @@ public class PayloadPolicy {
         Set<String> normalized = new HashSet<String>();
         for (String type : types) {
             if (StringUtils.isNotBlank(type)) {
-                normalized.add(type.trim());
+                normalized.add(StringUtils.trim(type));
             }
         }
         return normalized.isEmpty() ? Collections.<String>emptySet() : normalized;

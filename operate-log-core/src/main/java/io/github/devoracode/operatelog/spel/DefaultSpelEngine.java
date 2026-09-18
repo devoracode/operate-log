@@ -9,12 +9,13 @@ import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.common.TemplateParserContext;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 默认 SpEL 执行器：表达式问题只影响字段质量，绝不中断日志链路。
@@ -24,18 +25,28 @@ import java.util.Map;
  * <p>表达式缓存为定容 LRU；{@link Collections#synchronizedMap} 保证线程安全，
  * 并发下未命中重复解析只是幂等浪费，因此不加全局锁。</p>
  *
- * <p><b>安全约束</b>：本引擎使用 {@link StandardEvaluationContext}，支持完整 SpEL 能力
- * （包括静态方法调用与构造函数调用）。表达式仅允许来自编译期注解常量
- * （{@code @OperateLog} 的属性值），禁止运行时动态注入表达式文本，
- * 否则将导致远程代码执行（RCE）风险。如需动态表达式，应迁移至 {@code SimpleEvaluationContext}。</p>
+ * <p><b>安全沙箱</b>：本引擎使用 {@link SimpleEvaluationContext#forReadOnlyDataBinding()}，
+ * 仅支持变量读取、属性访问与实例方法调用，<b>不支持</b>类型引用（{@code T(...)}）、构造函数
+ * （{@code new ...}）、bean 引用（{@code @bean}）与静态方法调用——即使表达式文本来自编译期
+ * 注解常量（{@code @OperateLog} 的属性值），也无法执行任意代码；运行时动态注入的表达式
+ * 同样只能命中沙箱内能力，从源头杜绝远程代码执行（RCE）风险。越界表达式求值即失败，
+ * 按同一降级方向处理（条件通过、模板原样、求值返回 null），不中断日志链路。</p>
  */
 public class DefaultSpelEngine implements SpelEngine {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSpelEngine.class);
     private static final String TEMPLATE_PREFIX = "T:";
     private static final String EXPRESSION_PREFIX = "E:";
+    /**
+     * 解析不到参数名时的哨兵：{@link ConcurrentHashMap} 不允许 null 值。
+     */
+    private static final String[] NO_PARAMETER_NAMES = new String[0];
     private final ExpressionParser parser = new SpelExpressionParser();
     private final DefaultParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
     private final Map<String, Expression> expressionCache;
+    /**
+     * 方法参数名缓存：定容 LRU，与 expressionCache 共享同一容量上限。
+     */
+    private final Map<Method, String[]> parameterNameCache;
     private final boolean enabled;
 
     public DefaultSpelEngine(int cacheSize) {
@@ -50,6 +61,14 @@ public class DefaultSpelEngine implements SpelEngine {
                 true) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, Expression> eldest) {
+                return size() > maxCacheSize;
+            }
+        });
+        this.parameterNameCache = Collections.synchronizedMap(new LinkedHashMap<Method, String[]>(16,
+                0.75f,
+                true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Method, String[]> eldest) {
                 return size() > maxCacheSize;
             }
         });
@@ -75,7 +94,7 @@ public class DefaultSpelEngine implements SpelEngine {
 
     @Override
     public String evaluateTemplate(String template, OperateLogContext context) {
-        if (template == null || template.isEmpty()) {
+        if (StringUtils.isEmpty(template)) {
             return template;
         }
         if (!this.enabled) {
@@ -134,8 +153,13 @@ public class DefaultSpelEngine implements SpelEngine {
         return parsedExpression;
     }
 
-    private StandardEvaluationContext createEvaluationContext(OperateLogContext context) {
-        StandardEvaluationContext evaluationContext = new StandardEvaluationContext();
+    private SimpleEvaluationContext createEvaluationContext(OperateLogContext context) {
+        // forReadOnlyDataBinding() 只装只读属性访问器，不装方法解析器（Spring 5.3.x 的 Builder
+        // 默认 resolvers 为 emptyList），任何方法调用都会 METHOD_NOT_FOUND；
+        // 显式 withInstanceMethods() 装上实例方法解析器（静态方法仍被过滤）
+        SimpleEvaluationContext evaluationContext = SimpleEvaluationContext.forReadOnlyDataBinding()
+                .withInstanceMethods()
+                .build();
         evaluationContext.setVariable("context", context);
         evaluationContext.setVariable("annotation", context.getAnnotation());
         evaluationContext.setVariable("result", context.getResult());
@@ -152,11 +176,7 @@ public class DefaultSpelEngine implements SpelEngine {
             evaluationContext.setVariable("p" + i, arguments[i]);
             evaluationContext.setVariable("a" + i, arguments[i]);
         }
-        Method method = context.getMethod();
-        String[] parameterNames = this.parameterNameDiscoverer.getParameterNames(method);
-        if (parameterNames == null) {
-            return evaluationContext;
-        }
+        String[] parameterNames = resolveParameterNames(context.getMethod());
         for (int i = 0; i < parameterNames.length && i < arguments.length; i++) {
             String parameterName = parameterNames[i];
             if (StringUtils.isNotBlank(parameterName)) {
@@ -164,5 +184,25 @@ public class DefaultSpelEngine implements SpelEngine {
             }
         }
         return evaluationContext;
+    }
+
+    /**
+     * 解析方法参数名并缓存。{@link DefaultParameterNameDiscoverer} 在 {@code -parameters}
+     * 不可用时会回落到读 class 文件字节码的实现，而本方法每次求值都会被调用（单条记录最多
+     * 3 次：condition / description / businessId），不缓存会把字节码解析开销按 QPS 放大。
+     * 解析不到时缓存空数组哨兵，避免每次重试同一失败路径。
+     */
+    private String[] resolveParameterNames(Method method) {
+        if (method == null) {
+            return NO_PARAMETER_NAMES;
+        }
+        String[] cached = this.parameterNameCache.get(method);
+        if (cached != null) {
+            return cached;
+        }
+        String[] discovered = this.parameterNameDiscoverer.getParameterNames(method);
+        String[] resolved = discovered == null ? NO_PARAMETER_NAMES : discovered;
+        this.parameterNameCache.putIfAbsent(method, resolved);
+        return resolved;
     }
 }

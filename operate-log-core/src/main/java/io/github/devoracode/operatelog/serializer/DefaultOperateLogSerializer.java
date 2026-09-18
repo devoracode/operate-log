@@ -1,6 +1,7 @@
 package io.github.devoracode.operatelog.serializer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.commons.lang3.ArrayUtils;
 
 /**
  * 默认序列化器：用 Jackson {@link ObjectMapper} 把对象写成 JSON 文本。
@@ -30,7 +31,7 @@ public class DefaultOperateLogSerializer implements OperateLogSerializer {
     /** 优先整体序列化；失败则逐元素降级，坏元素换成占位符。 */
     @Override
     public String serializeArguments(Object[] arguments) {
-        if (arguments == null || arguments.length == 0) {
+        if (ArrayUtils.isEmpty(arguments)) {
             return serialize(arguments);
         }
         String whole = writeQuietly(arguments);

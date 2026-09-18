@@ -55,7 +55,9 @@
         <spring.framework.version>5.3.31</spring.framework.version>
         <!-- jackson-databind / jsr310：core 编译用，标 optional 不向宿主传递 -->
         <jackson.version>2.13.5</jackson.version>
-        <aspectj.version>1.9.7</aspectj.version>
+        <!-- aspectjweaver 编译基线：1.9.7 对 JDK 17+ / Boot 3 偏旧，取 1.9.22。
+             宿主依赖管理（spring-boot-dependencies）优先于传递版本，不会反向压过宿主版本。 -->
+        <aspectj.version>1.9.22</aspectj.version>
         <commons-lang3.version>3.12.0</commons-lang3.version>
         <slf4j.version>1.7.36</slf4j.version>
         <lombok.version>1.18.30</lombok.version>
@@ -100,6 +102,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven.surefire.plugin.version}</version>
+                    <configuration>
+                        <!-- Mockito inline mock maker 依赖 Byte Buddy self-attach；JDK 17+ 默认禁止
+                             自附加，不加此项会以「Could not initialize plugin: MockMaker」失败。 -->
+                        <argLine>-Djdk.attach.allowAttachSelf=true</argLine>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>

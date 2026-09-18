@@ -14,7 +14,6 @@ import io.github.devoracode.operatelog.resolver.OperatorResolver;
 import io.github.devoracode.operatelog.sanitizer.SensitiveDataMasker;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import io.github.devoracode.operatelog.spel.SpelEngine;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -24,7 +23,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.aop.support.AopUtils;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotationUtils;
+import org.springframework.core.annotation.Order;
 import org.springframework.util.ClassUtils;
 
 import java.io.PrintWriter;
@@ -32,8 +33,10 @@ import java.io.StringWriter;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -45,12 +48,20 @@ import java.util.UUID;
  *
  * <p>业务零影响纪律：日志侧故障只以 warn / debug 暴露，业务异常原样透传；
  * {@code finally} 收尾不得抛出（{@code finishQuietly} 兜底）。</p>
+ *
+ * <p>切面顺序显式声明为 {@link Ordered#LOWEST_PRECEDENCE}，不再依赖默认值推断；
+ * {@code success} 的语义是「业务方法未抛异常」，<b>不含</b>事务提交结果。若宿主的事务通知落在
+ * 本切面内层，业务方法返回后事务才提交，提交失败并回滚时日志已写为成功。需要「日志与事务结果
+ * 一致」的审计结论时，请为事务通知显式指定更低 order（使其位于本切面外层），或改用延后落地的
+ * {@code OperateLogHandler}。</p>
  */
 @Aspect
-@RequiredArgsConstructor
+@Order(Ordered.LOWEST_PRECEDENCE)
 public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
-    /** traceId 默认 MDC key，可由 {@code operate-log.trace-id-mdc-key} 覆盖。 */
+    /**
+     * traceId 默认 MDC key，可由 {@code operate-log.trace-id-mdc-key} 覆盖。
+     */
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
@@ -64,6 +75,53 @@ public class OperateLogAspect {
     private final boolean maskEnabled;
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
+    /**
+     * 注解查找结果缓存：定容 LRU，热部署时旧 ClassLoader 的 Method/Class 引用随淘汰自然释放。
+     */
+    private final Map<AnnotationCacheKey, Optional<OperateLog>> annotationCache;
+
+    /**
+     * 供宿主直接 {@code new} 以自定义切点（见 README「注解属性」）。参数顺序即二进制签名：
+     * <b>新增字段一律追加到末尾，禁止插入或重排</b>——切面是用户可覆盖的扩展点，
+     * 改序会让已编译的宿主实现静默错位（Lombok {@code @RequiredArgsConstructor} 不再使用，
+     * 正是为了让该约束在源码里可见、可评审）。
+     */
+    public OperateLogAspect(OperateLogHandler handler,
+                            OperatorResolver operatorResolver,
+                            HttpContextResolver httpContextResolver,
+                            OperateLogSerializer serializer,
+                            SensitiveDataMasker sensitiveDataMasker,
+                            SpelEngine spelEngine,
+                            String application,
+                            String environment,
+                            String version,
+                            boolean maskEnabled,
+                            PayloadPolicy payloadPolicy,
+                            String traceIdMdcKey,
+                            int annotationCacheSize) {
+        this.handler = handler;
+        this.operatorResolver = operatorResolver;
+        this.httpContextResolver = httpContextResolver;
+        this.serializer = serializer;
+        this.sensitiveDataMasker = sensitiveDataMasker;
+        this.spelEngine = spelEngine;
+        this.application = application;
+        this.environment = environment;
+        this.version = version;
+        this.maskEnabled = maskEnabled;
+        this.payloadPolicy = payloadPolicy;
+        this.traceIdMdcKey = traceIdMdcKey;
+        final int maxCacheSize = Math.max(annotationCacheSize, 64);
+        this.annotationCache = Collections.synchronizedMap(new LinkedHashMap<AnnotationCacheKey, Optional<OperateLog>>(
+                16,
+                0.75f,
+                true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<AnnotationCacheKey, Optional<OperateLog>> eldest) {
+                return size() > maxCacheSize;
+            }
+        });
+    }
 
     @Around("@annotation(io.github.devoracode.operatelog.annotation.OperateLog)")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
@@ -77,7 +135,7 @@ public class OperateLogAspect {
             Object target = joinPoint.getTarget();
             targetClass = target == null ? invocationMethod.getDeclaringClass() : target.getClass();
             targetMethod = AopUtils.getMostSpecificMethod(invocationMethod, targetClass);
-            annotation = findOperateLog(invocationMethod, targetMethod, targetClass);
+            annotation = findOperateLogCached(invocationMethod, targetMethod, targetClass);
         } catch (Throwable ex) {
             LOGGER.warn("operate-log: annotation lookup failed, logging skipped.", ex);
             return joinPoint.proceed();
@@ -86,6 +144,7 @@ public class OperateLogAspect {
             return joinPoint.proceed();
         }
         final OperateLogContext context;
+        final TraceId traceId;
         try {
             context = new OperateLogContext(annotation,
                     joinPoint,
@@ -93,7 +152,8 @@ public class OperateLogAspect {
                     joinPoint.getTarget(),
                     joinPoint.getArgs());
             context.setStartTime(Instant.now());
-            context.setTraceId(resolveTraceId());
+            traceId = resolveTraceId();
+            context.setTraceId(traceId.value());
             context.setOperator(resolveOperator());
             context.setHttp(resolveHttpContext());
         } catch (Throwable ex) {
@@ -118,6 +178,10 @@ public class OperateLogAspect {
             } finally {
                 // 嵌套标注方法场景：恢复外层上下文而非直接清空，防止 ThreadLocal 泄漏与外层丢数据
                 restorePreviousContext(previous);
+                // 只清理本组件生成的 traceId：MDC 原有值属于宿主链路追踪体系，不得越权抹除
+                if (traceId.generated()) {
+                    clearTraceIdQuietly(traceId.mdcKey());
+                }
             }
         }
     }
@@ -133,12 +197,14 @@ public class OperateLogAspect {
                     .toMillis());
             handleSafely(context);
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: log finalization failed, this record may be lost; "
-                    + "business execution is unaffected.", ex);
+            LOGGER.warn("operate-log: log finalization failed, this record may be lost; " + "business execution is unaffected.",
+                    ex);
         }
     }
 
-    /** 嵌套场景恢复外层上下文，否则解绑当前线程。 */
+    /**
+     * 嵌套场景恢复外层上下文，否则解绑当前线程。
+     */
     private void restorePreviousContext(OperateLogContext previous) {
         if (previous == null) {
             OperateLogContextHolder.unbind();
@@ -147,20 +213,66 @@ public class OperateLogAspect {
         }
     }
 
-    /** {@code recordOn} 过滤：SUCCESS 只在正常返回时记，ERROR 只在抛异常时记；先于 SpEL 条件短路。 */
+    /**
+     * {@code recordOn} 过滤：SUCCESS 只在正常返回时记，ERROR 只在抛异常时记；先于 SpEL 条件短路。
+     */
     private boolean shouldRecord(OperateLogContext context) {
-        RecordOn recordOn = context.getAnnotation().recordOn();
-        if (recordOn == null) {
-            // 防御自定义实现返回 null：视为 ALWAYS，不丢日志
-            return true;
-        }
-        switch (recordOn) {
+        // 注解属性不可能返回 null（无默认值也必须显式赋值），无需空值防御
+        switch (context.getAnnotation().recordOn()) {
             case SUCCESS:
                 return context.isSuccess();
             case ERROR:
                 return context.hasError();
             default:
                 return true;
+        }
+    }
+
+    /**
+     * 带缓存的注解查找。{@link #findOperateLog} 内含多轮反射与接口链扫描，
+     * 而同一切入点的注解在运行期不会变，故按「调用方法 + 目标类」缓存；
+     * targetClass 必须入 key——JDK 代理下同一接口方法可对应多个实现类，结果可能不同。
+     */
+    private OperateLog findOperateLogCached(Method invocationMethod,
+                                            Method targetMethod,
+                                            Class<?> targetClass) {
+        AnnotationCacheKey cacheKey = new AnnotationCacheKey(invocationMethod, targetClass);
+        Optional<OperateLog> cached = this.annotationCache.get(cacheKey);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
+        OperateLog resolved = findOperateLog(invocationMethod, targetMethod, targetClass);
+        this.annotationCache.putIfAbsent(cacheKey, Optional.ofNullable(resolved));
+        return resolved;
+    }
+
+    /**
+     * 注解缓存 key：{@link Method} 按签名比较、{@link Class} 按身份比较，组合后即唯一标识一个切入点。
+     */
+    private static final class AnnotationCacheKey {
+        private final Method method;
+        private final Class<?> targetClass;
+
+        private AnnotationCacheKey(Method method, Class<?> targetClass) {
+            this.method = method;
+            this.targetClass = targetClass;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) {
+                return true;
+            }
+            if (!(other instanceof AnnotationCacheKey)) {
+                return false;
+            }
+            AnnotationCacheKey that = (AnnotationCacheKey) other;
+            return this.method.equals(that.method) && this.targetClass.equals(that.targetClass);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * this.method.hashCode() + this.targetClass.hashCode();
         }
     }
 
@@ -187,7 +299,9 @@ public class OperateLogAspect {
         return findInterfaceAnnotation(targetClass, lookupMethod);
     }
 
-    /** 在目标类的全部接口（含父接口）上找同签名方法的注解，覆盖「只标接口 + JDK 代理」。 */
+    /**
+     * 在目标类的全部接口（含父接口）上找同签名方法的注解，覆盖「只标接口 + JDK 代理」。
+     */
     private OperateLog findInterfaceAnnotation(Class<?> targetClass, Method method) {
         if (targetClass == null || method == null) {
             return null;
@@ -208,15 +322,65 @@ public class OperateLogAspect {
         return null;
     }
 
-    private String resolveTraceId() {
+    /**
+     * 解析 traceId：优先取 MDC（宿主链路追踪体系写入的值），缺失时生成 UUID <b>并回写 MDC</b>，
+     * 使同一次请求内多个 {@code @OperateLog} 方法共享同一 traceId（嵌套调用不再各生成一个）。
+     * 返回值标记该值是否由本组件生成，据此决定收尾时是否清理 MDC。
+     */
+    private TraceId resolveTraceId() {
         String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
-        String traceId = null;
         try {
-            traceId = MDC.get(mdcKey);
+            String existing = MDC.get(mdcKey);
+            if (StringUtils.isNotBlank(existing)) {
+                return new TraceId(existing, false, mdcKey);
+            }
+            String generated = UUID.randomUUID().toString();
+            MDC.put(mdcKey, generated);
+            return new TraceId(generated, true, mdcKey);
         } catch (Throwable ex) {
+            // MDC 不可用时退化为「本条记录内唯一」的 ID，不回写也无需清理
             LOGGER.warn("operate-log: traceId resolution failed, degraded to generated UUID.", ex);
+            return new TraceId(UUID.randomUUID().toString(), false, mdcKey);
         }
-        return StringUtils.defaultIfBlank(traceId, UUID.randomUUID().toString());
+    }
+
+    /**
+     * 清理本组件写入的 traceId；清理失败只影响本线程 MDC，不牵连业务与日志收尾。
+     */
+    private void clearTraceIdQuietly(String mdcKey) {
+        try {
+            MDC.remove(mdcKey);
+        } catch (Throwable ex) {
+            LOGGER.warn("operate-log: traceId cleanup failed, MDC entry may remain on this thread.",
+                    ex);
+        }
+    }
+
+    /**
+     * traceId 取值结果：值、是否由本组件生成（决定收尾是否清理 MDC）、所用 MDC key。
+     */
+    private static final class TraceId {
+        private final String value;
+        private final boolean generated;
+        private final String mdcKey;
+
+        private TraceId(String value, boolean generated, String mdcKey) {
+            this.value = value;
+            this.generated = generated;
+            this.mdcKey = mdcKey;
+        }
+
+        private String value() {
+            return this.value;
+        }
+
+        private boolean generated() {
+            return this.generated;
+        }
+
+        private String mdcKey() {
+            return this.mdcKey;
+        }
     }
 
     private Operator resolveOperator() {
@@ -228,7 +392,9 @@ public class OperateLogAspect {
         }
     }
 
-    /** 采集请求侧 HTTP 快照；解析失败只让相关字段为 {@code null}。 */
+    /**
+     * 采集请求侧 HTTP 快照；解析失败只让相关字段为 {@code null}。
+     */
     private HttpContext resolveHttpContext() {
         try {
             return this.httpContextResolver.resolve();
@@ -238,7 +404,9 @@ public class OperateLogAspect {
         }
     }
 
-    /** 组装与落地全程隔离：故障只损失本条日志，原因在 debug 级别暴露。 */
+    /**
+     * 组装与落地全程隔离：故障只损失本条日志，原因在 debug 级别暴露。
+     */
     private void handleSafely(OperateLogContext context) {
         try {
             // recordOn 先行短路过滤（无 SpEL 求值成本），再进 condition 交集判定
@@ -280,10 +448,19 @@ public class OperateLogAspect {
         if (this.maskEnabled && requestQuery != null) {
             requestQuery = this.sensitiveDataMasker.maskQuery(requestQuery);
         }
-        // 截断在脱敏之后执行：无论脱敏使内容变长还是变短，落地的最终体积都不越界
+        // 异常 message 是纯文本（非 JSON），走 plainText 脱敏路径
+        String errorMessage = error == null ? null : error.getMessage();
+        if (this.maskEnabled) {
+            errorMessage = this.sensitiveDataMasker.maskPlainText(errorMessage);
+        }
+        String userAgent = httpContext == null ? null : httpContext.getUserAgent();
+        // 截断在脱敏之后执行：无论脱敏使内容变长还是变短，落地的最终体积都不越界。
+        // query / userAgent 与 JSON 字段同属客户端可控输入，必须一并受 request 上限保护
         requestHeaders = this.payloadPolicy.truncateRequest(requestHeaders);
         requestBody = this.payloadPolicy.truncateRequest(requestBody);
         responseBody = this.payloadPolicy.truncateResponse(responseBody);
+        requestQuery = this.payloadPolicy.truncateRequest(requestQuery);
+        userAgent = this.payloadPolicy.truncateRequest(userAgent);
         Map<String, Object> extra = context.getExtra()
                 .isEmpty() ? null : new LinkedHashMap<String, Object>(context.getExtra());
         return OperateLogRecord.builder()
@@ -308,13 +485,13 @@ public class OperateLogAspect {
                 .requestBody(requestBody)
                 .responseBody(responseBody)
                 .clientIp(httpContext == null ? null : httpContext.getIp())
-                .userAgent(httpContext == null ? null : httpContext.getUserAgent())
+                .userAgent(userAgent)
                 .success(context.isSuccess())
                 .costTime(context.getCostTime())
                 .startTime(context.getStartTime())
                 .endTime(context.getEndTime())
                 .errorType(error == null ? null : error.getClass().getName())
-                .errorMessage(error == null ? null : error.getMessage())
+                .errorMessage(this.payloadPolicy.truncateErrorMessage(errorMessage))
                 .errorStack(error == null ? null : this.payloadPolicy.truncateErrorStack(
                         getStackTrace(error)))
                 .extra(extra)
@@ -326,11 +503,59 @@ public class OperateLogAspect {
         return value == null ? null : String.valueOf(value);
     }
 
+    /**
+     * 打印堆栈到限长缓冲：深递归异常（如无限递归）的完整堆栈可达数十万行，
+     * 先构造完整字符串再截断会在内存里先撑起远超上限的副本。
+     */
     private String getStackTrace(Throwable throwable) {
-        StringWriter writer = new StringWriter();
+        LimitedStringWriter writer = new LimitedStringWriter(this.payloadPolicy.getMaxErrorLength());
         PrintWriter printWriter = new PrintWriter(writer);
         throwable.printStackTrace(printWriter);
         printWriter.flush();
         return writer.toString();
+    }
+
+    /**
+     * 写入超过上限后丢弃后续内容（含换行），使内存占用与最终落地长度同阶。
+     */
+    private static final class LimitedStringWriter extends StringWriter {
+        private final int limit;
+
+        private LimitedStringWriter(int limit) {
+            // limit<=0（不截断）同样按 8192 预分配：初始 256 会让大堆栈多次扩容拷贝，高频异常场景放大 GC 压力
+            super(limit > 0 ? Math.min(limit, 8192) : 8192);
+            this.limit = limit;
+        }
+
+        @Override
+        public void write(int c) {
+            if (this.limit <= 0 || getBuffer().length() < this.limit) {
+                super.write(c);
+            }
+        }
+
+        @Override
+        public void write(char[] cbuf, int off, int len) {
+            if (this.limit <= 0) {
+                super.write(cbuf, off, len);
+                return;
+            }
+            int remaining = this.limit - getBuffer().length();
+            if (remaining > 0) {
+                super.write(cbuf, off, Math.min(len, remaining));
+            }
+        }
+
+        @Override
+        public void write(String str, int off, int len) {
+            if (this.limit <= 0) {
+                super.write(str, off, len);
+                return;
+            }
+            int remaining = this.limit - getBuffer().length();
+            if (remaining > 0) {
+                super.write(str, off, Math.min(len, remaining));
+            }
+        }
     }
 }

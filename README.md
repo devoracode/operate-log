@@ -210,6 +210,7 @@ operate-log:
     max-request-length: 0         # requestBody / requestHeaders / requestQuery / userAgent 最大字符数，<=0 不截断
     max-response-length: 0        # responseBody 最大字符数，<=0 不截断
     max-error-length: 0           # errorStack / errorMessage 最大字符数，<=0 不截断
+    max-extra-length: 0           # extra 整体序列化后最大字符数，<=0 不截断（超限时逐值收缩到限额内）
     # ignore-types:               # 序列化时跳过的参数类型（全限定类名，命中父类/接口即算）
     #   - org.springframework.web.multipart.MultipartFile
     #   - java.io.InputStream
@@ -226,7 +227,7 @@ operate-log:
 | `operate-log.trace-id-mdc-key` | `traceId` | traceId 的 MDC key。与链路追踪体系的 MDC 写入 key 对齐（Micrometer/Sleuth 常见 `traceId`，OTel logback 桥接常见 `trace_id`）；MDC 取不到时生成 UUID 并回写该 key（收尾清理，只清理本组件写入的值），配置空白回退默认 key |
 | `operate-log.http.trust-proxy` | `false` | 信任代理头时，客户端 IP 解析顺序：`X-Forwarded-For`（取逗号链第一个）→ `X-Real-IP` → `getRemoteAddr()`；否则直接取 `getRemoteAddr()`。**仅在可信网络边界后开启**，防止客户端伪造 IP |
 | `operate-log.http.capture-headers` | `false` | 开启后采集全部请求头写入 `requestHeaders`（JSON 对象）。注意头部可能含 Cookie 等敏感信息，开启后脱敏器会一并处理 |
-| `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段以及 `requestQuery`（按参数名匹配） |
+| `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段、`requestQuery`（按参数名匹配）、`errorMessage` / `errorStack`（纯文本子串匹配）。**不作用于 `extra`**——见字段表说明 |
 | `operate-log.mask.mask-text` | `******` | 替换文本 |
 | `operate-log.mask.fields` | 空 | 在 11 个内置默认字段之外**追加**的脱敏字段名（匹配忽略大小写）。默认字段始终生效，无法通过配置移除 |
 | `operate-log.spel.enabled` | `true` | SpEL 开关。`false` 时引擎直通：condition 恒通过、description 输出模板原文、businessId 记 `null`，零求值开销 |
@@ -234,6 +235,7 @@ operate-log:
 | `operate-log.payload.max-request-length` | `0` | `requestBody` / `requestHeaders` / `requestQuery` / `userAgent` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
 | `operate-log.payload.max-response-length` | `0` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
 | `operate-log.payload.max-error-length` | `0` | `errorStack` / `errorMessage` 最大字符数，`<=0` 不截断 |
+| `operate-log.payload.max-extra-length` | `0` | `extra` 整体序列化后的最大字符数，`<=0` 不截断（与其他三项载荷上限一致）；超限时**逐值收缩**（每次截短最长的值）直到落入限额，`...[truncated]` 标记计入上限——不同于其余字段的整串截断，逐值收缩能保留排在末尾的键（如 `<UNSERIALIZABLE>` 占位）不被窗口切掉 |
 | `operate-log.payload.ignore-types` | 17 项内置 | 序列化参数时跳过的类型（全限定类名，父类/接口命中即算），替换为 `<IGNORED:类型简名>`；配置后整体替换默认列表。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
 
 ## 日志输出字段（`OperateLogRecord`）
@@ -256,7 +258,7 @@ operate-log:
 | `costTime` | 运行时 | 耗时（毫秒） |
 | `startTime` / `endTime` | 运行时 | 起止时间（`Instant`，ISO-8601） |
 | `errorType` / `errorMessage` / `errorStack` | 运行时 | 异常类名 / message / 堆栈（message 与堆栈按 `payload.max-error-length` 截断），正常时为 `null` |
-| `extra` | `OperateLogContextHolder#putExtra` | 业务自定义字段（Map），方法内写入、随记录落地；未写入时为 `null` |
+| `extra` | `OperateLogContextHolder#putExtra` | 业务自定义字段（Map），方法内写入、随记录落地；**由开发者主动写入，本组件不对其脱敏**（脱敏需要字段的业务语义，工具无法代判，硬猜只会误伤），请勿往 `extra` 里放密码 / token 等敏感数据；坏值（循环引用 / getter 抛错）降级为 `<UNSERIALIZABLE:类型>` 占位、不拖垮整条日志，整体按 `payload.max-extra-length` 逐值收缩限长；未写入时为 `null` |
 
 > 所有可能为 `null` 的字段在 JSON 中保留为 `null` 值，便于下游解析 schema 稳定。
 > `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 均受 `payload.*` 长度上限保护，超限截断。
@@ -322,7 +324,7 @@ public void cancel(String orderNo) {
 
 - 记录 JSON 中体现为 `"extra":{"channel":"APP","amount":9900}`；未写入时 `extra` 为 `null`。
 - 切面管辖范围之外（如业务另起的异步线程）调用是安全 no-op，不抛异常、不入日志。
-- 值由序列化器直接写入日志，**请勿放入未脱敏的敏感数据**。
+- 值由序列化器直接写入日志，**本组件不对 `extra` 做自动脱敏**（脱敏开关 `mask.enabled` 不覆盖它），请勿放入密码 / token 等敏感数据。
 
 ### 示例：落库 Handler
 

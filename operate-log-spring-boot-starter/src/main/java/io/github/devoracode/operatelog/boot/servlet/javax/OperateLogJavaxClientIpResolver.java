@@ -59,11 +59,11 @@ public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
         return request.getRemoteAddr();
     }
 
+    /** 校验 IP 字面量：无 {@code ':'} 按 IPv4（四段十进制 0–255），含 {@code ':'} 按 IPv6（十六进制与冒号，至多一处 {@code ::}，可带方括号）。 */
     private static boolean isValidIp(String value) {
         if (StringUtils.isBlank(value)) {
             return false;
         }
-        // IPv4: four dot-separated decimal octets
         if (value.indexOf(':') < 0) {
             String[] parts = value.split("\\.");
             if (parts.length != 4) {
@@ -86,7 +86,6 @@ public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
             }
             return true;
         }
-        // IPv6: hex chars, colons, optional brackets, at most one ::
         String s = value;
         if (s.startsWith("[") && s.endsWith("]")) {
             s = s.substring(1, s.length() - 1);

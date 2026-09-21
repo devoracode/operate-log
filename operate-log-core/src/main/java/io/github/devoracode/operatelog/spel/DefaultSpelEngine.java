@@ -187,10 +187,8 @@ public class DefaultSpelEngine implements SpelEngine {
     }
 
     /**
-     * 解析方法参数名并缓存。{@link DefaultParameterNameDiscoverer} 在 {@code -parameters}
-     * 不可用时会回落到读 class 文件字节码的实现，而本方法每次求值都会被调用（单条记录最多
-     * 3 次：condition / description / businessId），不缓存会把字节码解析开销按 QPS 放大。
-     * 解析不到时缓存空数组哨兵，避免每次重试同一失败路径。
+     * 解析并缓存方法参数名。{@link DefaultParameterNameDiscoverer} 在 {@code -parameters} 不可用时
+     * 会回落到读字节码，而每次求值都可能调用本方法，不缓存会把开销按 QPS 放大；解析不到时缓存空数组哨兵。
      */
     private String[] resolveParameterNames(Method method) {
         if (method == null) {

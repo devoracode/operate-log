@@ -35,9 +35,8 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSensitiveDataMasker.class);
     private static final String DEFAULT_MASK_TEXT = "******";
     /**
-     * 内置默认敏感字段，<b>始终生效</b>：构造时与传入集合取并集，无法通过配置移除。
-     * 这样「只想追加一个字段」的配置动作不会静默关掉既有脱敏项——脱敏是安全控制，
-     * 默认集被整体替换的代价远大于无法精简。
+     * 内置默认敏感字段，<b>始终生效</b>：构造时与传入集合取并集，配置无法移除。
+     * 免得「只想追加一个字段」的动作静默关掉既有脱敏项——整体替换默认集的代价远大于无法精简。
      */
     public static final Set<String> DEFAULT_FIELDS = Collections.unmodifiableSet(new LinkedHashSet<String>(
             Arrays.asList("password",
@@ -96,12 +95,8 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
     }
 
     /**
-     * 对 URL query string（{@code name=value&...}）中的敏感参数值进行掩码。
-     * 按参数名匹配（忽略大小写），命中时将值替换为 maskText。
-     *
-     * <p>参数名按 {@code application/x-www-form-urlencoded} 解码后再匹配，
-     * 避免 {@code pass%77ord=...} / {@code token%5B%5D=...} 这类编码形式绕过脱敏；
-     * 输出仍保留参数名原始写法，仅替换值。</p>
+     * 按参数名（忽略大小写）掩码 URL query string 的敏感值。参数名先按 form 解码再匹配，
+     * 避免 {@code pass%77ord} 之类编码绕过；输出保留原始参数名写法，仅替换值。
      */
     @Override
     public String maskQuery(String query) {

@@ -42,31 +42,21 @@ import java.util.UUID;
 /**
  * 操作日志切面。
  *
- * <p>注解查找链（兼容全部代理形态）：目标类 most-specific 方法 → 调用方法（JDK 代理即接口方法）
- * → 目标类实现的全部接口上的同签名方法。CGLIB 代理（Boot 默认）下注解只标在接口方法上时
- * advice 不会织入，需把注解放到实现类方法上。</p>
+ * <p>注解查找链（兼容各类代理形态）：目标类 most-specific 方法 → 调用方法 → 目标类接口的同签名方法。
+ * CGLIB 代理下注解只标在接口方法上不会织入，需放到实现类方法。</p>
  *
- * <p>业务零影响纪律：日志侧故障只以 warn / debug 暴露，业务异常原样透传；
- * {@code finally} 收尾不得抛出（{@code finishQuietly} 兜底）。</p>
+ * <p>业务零影响：日志侧故障只以 warn / debug 暴露，业务异常原样透传，{@code finally} 收尾不外抛。</p>
  *
- * <p>切面顺序显式声明为 {@link Ordered#LOWEST_PRECEDENCE}，不再依赖默认值推断；
- * {@code success} 的语义是「业务方法未抛异常」，<b>不含</b>事务提交结果。若宿主的事务通知落在
- * 本切面内层，业务方法返回后事务才提交，提交失败并回滚时日志已写为成功。需要「日志与事务结果
- * 一致」的审计结论时，请为事务通知显式指定更低 order（使其位于本切面外层），或改用延后落地的
- * {@code OperateLogHandler}。</p>
+ * <p>{@code success} 仅表示「业务方法未抛异常」，<b>不含</b>事务提交结果：若事务通知位于本切面内层，
+ * 回滚时日志仍记为成功。要求审计一致需让事务通知位于外层，或改用延后落地的 {@code OperateLogHandler}。</p>
  */
 @Aspect
 @Order(Ordered.LOWEST_PRECEDENCE)
 public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
-    /**
-     * traceId 默认 MDC key，可由 {@code operate-log.trace-id-mdc-key} 覆盖。
-     */
+    /** traceId 默认 MDC key，可由 {@code operate-log.trace-id-mdc-key} 覆盖。 */
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
-    /**
-     * {@link io.github.devoracode.operatelog.serializer.DefaultOperateLogSerializer} 序列化失败时的哨兵串；
-     * 探测 extra 单值能否被 Jackson 写出时按它判定。
-     */
+    /** {@code DefaultOperateLogSerializer} 序列化失败哨兵，用于探测 extra 单值能否写出。 */
     private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
@@ -80,16 +70,12 @@ public class OperateLogAspect {
     private final boolean maskEnabled;
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
-    /**
-     * 注解查找结果缓存：定容 LRU，热部署时旧 ClassLoader 的 Method/Class 引用随淘汰自然释放。
-     */
+    /** 注解查找缓存：定容 LRU，热部署下旧 ClassLoader 引用随淘汰释放。 */
     private final Map<AnnotationCacheKey, Optional<OperateLog>> annotationCache;
 
     /**
-     * 供宿主直接 {@code new} 以自定义切点（见 README「注解属性」）。参数顺序即二进制签名：
-     * <b>新增字段一律追加到末尾，禁止插入或重排</b>——切面是用户可覆盖的扩展点，
-     * 改序会让已编译的宿主实现静默错位（Lombok {@code @RequiredArgsConstructor} 不再使用，
-     * 正是为了让该约束在源码里可见、可评审）。
+     * 供宿主直接 {@code new} 以自定义切点。参数顺序即二进制签名，
+     * <b>新增字段只能追加到末尾、禁止重排</b>——切面是可覆盖的扩展点，改序会让已编译宿主静默错位。
      */
     public OperateLogAspect(OperateLogHandler handler,
                             OperatorResolver operatorResolver,
@@ -135,7 +121,7 @@ public class OperateLogAspect {
         final Method targetMethod;
         final OperateLog annotation;
         try {
-            // 签名与目标类解析同样是日志侧工作，异常不得穿透到业务
+            // 签名/目标类解析也属日志侧工作，异常不得穿透到业务
             invocationMethod = ((MethodSignature) joinPoint.getSignature()).getMethod();
             Object target = joinPoint.getTarget();
             targetClass = target == null ? invocationMethod.getDeclaringClass() : target.getClass();
@@ -165,7 +151,7 @@ public class OperateLogAspect {
             LOGGER.warn("operate-log: context initialization failed, logging skipped.", ex);
             return joinPoint.proceed();
         }
-        // 绑定线程上下文：业务方法内可通过 OperateLogContextHolder#putExtra 追加自定义字段
+        // 绑定线程上下文：业务方法内可通过 OperateLogContextHolder#putExtra 追加字段
         OperateLogContext previous = OperateLogContextHolder.current();
         OperateLogContextHolder.bind(context);
         try {
@@ -181,9 +167,9 @@ public class OperateLogAspect {
             try {
                 finishQuietly(context);
             } finally {
-                // 嵌套标注方法场景：恢复外层上下文而非直接清空，防止 ThreadLocal 泄漏与外层丢数据
+                // 嵌套场景恢复外层上下文，避免 ThreadLocal 泄漏与外层丢数据
                 restorePreviousContext(previous);
-                // 只清理本组件生成的 traceId：MDC 原有值属于宿主链路追踪体系，不得越权抹除
+                // 只清理本组件生成的 traceId，宿主 MDC 值不动
                 if (traceId.generated()) {
                     clearTraceIdQuietly(traceId.mdcKey());
                 }
@@ -192,8 +178,7 @@ public class OperateLogAspect {
     }
 
     /**
-     * 日志收尾：计时 → 组装并落地。绝不向外抛出：运行在切面 {@code finally} 中，
-     * 逃逸异常会顶替业务异常或污染返回值。
+     * 日志收尾：计时 → 组装落地。运行于切面 {@code finally}，逃逸异常会顶替业务异常，故不外抛。
      */
     private void finishQuietly(OperateLogContext context) {
         try {
@@ -207,9 +192,7 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 嵌套场景恢复外层上下文，否则解绑当前线程。
-     */
+    /** 嵌套场景下恢复外层上下文，否则解绑当前线程。 */
     private void restorePreviousContext(OperateLogContext previous) {
         if (previous == null) {
             OperateLogContextHolder.unbind();
@@ -218,11 +201,8 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * {@code recordOn} 过滤：SUCCESS 只在正常返回时记，ERROR 只在抛异常时记；先于 SpEL 条件短路。
-     */
+    /** {@code recordOn} 过滤：SUCCESS 只记正常返回，ERROR 只记抛异常，先于 SpEL 短路。 */
     private boolean shouldRecord(OperateLogContext context) {
-        // 注解属性不可能返回 null（无默认值也必须显式赋值），无需空值防御
         switch (context.getAnnotation().recordOn()) {
             case SUCCESS:
                 return context.isSuccess();
@@ -234,9 +214,8 @@ public class OperateLogAspect {
     }
 
     /**
-     * 带缓存的注解查找。{@link #findOperateLog} 内含多轮反射与接口链扫描，
-     * 而同一切入点的注解在运行期不会变，故按「调用方法 + 目标类」缓存；
-     * targetClass 必须入 key——JDK 代理下同一接口方法可对应多个实现类，结果可能不同。
+     * 带缓存的注解查找。{@code findOperateLog} 含多轮反射与接口扫描，而切入点注解运行期不变，
+     * 故按「调用方法 + 目标类」缓存；targetClass 必须入 key——同一接口方法可对应多个实现类。
      */
     private OperateLog findOperateLogCached(Method invocationMethod,
                                             Method targetMethod,
@@ -328,9 +307,8 @@ public class OperateLogAspect {
     }
 
     /**
-     * 解析 traceId：优先取 MDC（宿主链路追踪体系写入的值），缺失时生成 UUID <b>并回写 MDC</b>，
-     * 使同一次请求内多个 {@code @OperateLog} 方法共享同一 traceId（嵌套调用不再各生成一个）。
-     * 返回值标记该值是否由本组件生成，据此决定收尾时是否清理 MDC。
+     * 解析 traceId：优先取宿主 MDC 值，缺失时生成 UUID 并回写 MDC，使同一请求内多个
+     * {@code @OperateLog} 方法（含嵌套）共享同一 traceId。返回值标记是否本组件生成，据此决定收尾是否清理。
      */
     private TraceId resolveTraceId() {
         String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
@@ -461,8 +439,7 @@ public class OperateLogAspect {
             errorStack = this.sensitiveDataMasker.maskPlainText(errorStack);
         }
         String userAgent = httpContext == null ? null : httpContext.getUserAgent();
-        // 截断在脱敏之后执行：无论脱敏使内容变长还是变短，落地的最终体积都不越界。
-        // query / userAgent 与 JSON 字段同属客户端可控输入，必须一并受 request 上限保护
+        // 截断在脱敏之后：脱敏可能改变长度，先截断会越界；query/userAgent 同为客户端可控输入，一并受 request 上限保护
         requestHeaders = this.payloadPolicy.truncateRequest(requestHeaders);
         requestBody = this.payloadPolicy.truncateRequest(requestBody);
         responseBody = this.payloadPolicy.truncateResponse(responseBody);
@@ -509,9 +486,8 @@ public class OperateLogAspect {
     }
 
     /**
-     * 打印堆栈到限长缓冲：深递归异常（如无限递归）的完整堆栈可达数十万行，
-     * 先构造完整字符串再截断会在内存里先撑起远超上限的副本。
-     * 上限（含 {@code <=0 不截断} 语义）由 {@link LimitedStringWriter} 自身处理，此处直接透传。
+     * 打印堆栈到限长缓冲：深递归异常堆栈可达数十万行，先构造完整串再截断会先撑起远超上限的内存副本。
+     * 上限（含 {@code <=0 不截断}）由 {@link LimitedStringWriter} 处理，此处直接透传。
      */
     private String getStackTrace(Throwable throwable) {
         StringWriter writer = new LimitedStringWriter(this.payloadPolicy.getMaxErrorLength());
@@ -539,12 +515,9 @@ public class OperateLogAspect {
     }
 
     /**
-     * 单值降级：仅保证「Jackson 能写出」这一件事。extra 由开发者在业务方法内主动写入，
-     * 本组件不做脱敏（脱敏是字段级安全控制，需要开发者明示字段的语义，工具替他们判定「哪个值是敏感」
-     * 只会误伤——README 明确提醒不要往 extra 里塞敏感数据）。
-     * 但一个循环引用 / getter 抛错的坏值会让整条记录在 handler 侧序列化失败被丢，所以必须逐值探测：
-     * 标量直返；非标量先序列化，写不出（{@link #UNSERIALIZABLE_SENTINEL}）就换成占位符，
-     * 让其他字段照常落地。
+     * extra 单值降级：只保证「Jackson 能写出」。extra 由开发者主动写入，本组件不脱敏
+     * （见 README「不要往 extra 塞敏感数据」）；但一个循环引用 / getter 抛错的坏值会让整条记录
+     * 在 handler 侧序列化失败被丢，故逐值探测：标量直返，非标量写不出就换占位符，其余字段照常落地。
      */
     private Object toSerializableValue(Object value) {
         if (value == null || value instanceof String || value instanceof Number
@@ -559,9 +532,8 @@ public class OperateLogAspect {
     }
 
     /**
-     * 逐值收缩直至整体 JSON 不超上限；一次收缩至少缩 1 字符以保证收敛。
-     * 相比「整表转字符串一次截断」的降级，逐值收缩能保留排在下方的键（如 UNSERIALIZABLE 占位符）——
-     * 整表截断会让落在窗口外的诊断线索丢失，反而更难定位问题。
+     * 逐值收缩最长的值直至整体 JSON 不超上限，一次至少缩 1 字符保证收敛。
+     * 相比整表一次截断，逐值收缩能保留排在下方的键（如占位符），不丢诊断线索。
      */
     private void enforceExtraLimit(Map<String, Object> extra, int limit) {
         String serialized = this.serializer.serialize(extra);

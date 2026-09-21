@@ -20,21 +20,17 @@ import java.util.Set;
  */
 public class PayloadPolicy {
     private static final String TRUNCATED_SUFFIX = "...[truncated]";
-    /**
-     * 参数类型解析缓存上限：单应用参数类型数天然有界，定容 LRU 防热部署下旧 Class 引用滞留。
-     */
+    /** 参数类型解析缓存上限：单应用类型数天然有界，定容 LRU 防热部署旧 Class 滞留。 */
     private static final int IGNORED_TYPE_CACHE_SIZE = 512;
     private final int maxRequestLength;
     private final int maxResponseLength;
-    /**
-     * errorStack 与 errorMessage 共用同一上限。
-     */
+    /** errorStack 与 errorMessage 共用同一上限。 */
     private final int maxErrorLength;
     private final int maxExtraLength;
     private final Set<String> ignoredTypes;
     /**
-     * 参数类型 → 命中忽略项的解析缓存（{@link Optional#empty()} 哨兵表示无命中）：
-     * 每个参数每次调用都要走父类链与接口扫描，缓存后降为一次 Map 查询。
+     * 参数类型 → 命中忽略项的缓存（{@link Optional#empty()} 表示无命中）：
+     * 未命中也要扫描父类链与接口，缓存后降为一次 Map 查询。
      */
     private final Map<Class<?>, Optional<String>> ignoredTypeCache = Collections.synchronizedMap(new LinkedHashMap<Class<?>, Optional<String>>(
             16,
@@ -62,9 +58,8 @@ public class PayloadPolicy {
     }
 
     /**
-     * 命中「忽略类型」的参数替换为 {@code <IGNORED:命中类型短名>}；
-     * 短名取配置里命中的那一项（接口/父类），不用运行时实现类名。
-     * 无命中返回原数组，有命中先克隆再替换，不改调用方入参。
+     * 命中「忽略类型」的参数替换为 {@code <IGNORED:命中类型短名>}（短名取配置命中的接口/父类，非运行时实现类）。
+     * 无命中返回原数组；有命中先克隆再替换，不改调用方入参。
      */
     public Object[] filterArguments(Object[] arguments) {
         if (ArrayUtils.isEmpty(arguments) || this.ignoredTypes.isEmpty()) {

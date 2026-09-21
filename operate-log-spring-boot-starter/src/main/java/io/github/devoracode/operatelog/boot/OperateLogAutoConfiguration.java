@@ -79,10 +79,7 @@ public class OperateLogAutoConfiguration {
         }
 
         /**
-         * 默认序列化器：用宿主 ObjectMapper 序列化请求/响应体。
-         * 宿主 mapper 经 {@link ObjectProvider} 惰性获取并三 bean 共享（{@code copy()} 只做一次），
-         * 本配置不注册 ObjectMapper bean（理由见类注释）；取到后做防御性 {@code copy()}
-         * 并补注册 {@link JavaTimeModule}，避免 {@link java.time.Instant} 等时间类型序列化失败。
+         * 默认序列化器：用宿主 ObjectMapper 副本序列化请求/响应体（mapper 获取方式见 {@link #safeTimeMapper()}）。
          */
         @Bean
         @ConditionalOnMissingBean(OperateLogSerializer.class)
@@ -168,11 +165,9 @@ public class OperateLogAutoConfiguration {
         }
 
         /**
-         * 日志侧共享 ObjectMapper：首次调用时取宿主 bean 的防御性副本（保留宿主全部配置，补注册
-         * {@link JavaTimeModule} 保证 {@link java.time.Instant} 等时间类型可序列化，已注册时幂等）；
-         * 宿主完全没有 ObjectMapper 时（非 Web 且未装配 Jackson）自建兜底实例。
-         * 三个消费 bean 共享同一实例，{@code copy()} 全程只做一次；惰性取值保持 mapper
-         * 解析时点在消费 bean 创建期，不在配置类构造期。
+         * 日志侧共享 ObjectMapper：首次调用取宿主 bean 的防御性副本（保留宿主全部配置，补注册
+         * {@link JavaTimeModule} 保证时间类型可序列化），宿主完全没有 mapper 时自建兜底实例。
+         * 三个消费 bean 共享同一实例、{@code copy()} 只做一次；惰性取值把解析时点留在消费 bean 创建期。
          */
         private ObjectMapper safeTimeMapper() {
             ObjectMapper cached = this.sharedSafeTimeMapper;

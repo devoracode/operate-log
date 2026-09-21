@@ -28,7 +28,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 错误堆栈截断测试：需显式配置 max-error-length。
  */
-@SpringBootTest(properties = "operate-log.payload.max-error-length=4096")
+@SpringBootTest(properties = {
+        "operate-log.payload.max-error-length=4096",
+        "operate-log.mask.enabled=true"
+})
 @AutoConfigureMockMvc
 class OperateLogBoot3ErrorStackTruncationTest {
 
@@ -81,6 +84,19 @@ class OperateLogBoot3ErrorStackTruncationTest {
         assertTrue(text(record, "errorStack").length() <= MAX_ERROR_LENGTH,
                 "errorStack 不得越界: " + text(record, "errorStack").length());
         assertFalse(flag(record, "success"));
+    }
+
+    @Test
+    void masksCompleteStackBeforeTruncatingIt() throws Exception {
+        try {
+            this.mockMvc.perform(get("/demo/fail-sensitive"));
+        } catch (Exception expected) {
+        }
+
+        String stack = text(lastRecord(), "errorStack");
+        assertTrue(stack.length() <= MAX_ERROR_LENGTH, stack);
+        assertFalse(stack.contains("TOP_SECRET_VALUE_1234567890"), stack);
+        assertTrue(stack.contains("******"), stack);
     }
 
     private int countRecords() {

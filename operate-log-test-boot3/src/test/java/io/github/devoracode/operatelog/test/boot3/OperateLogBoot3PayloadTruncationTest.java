@@ -22,6 +22,7 @@ import java.util.List;
 import static io.github.devoracode.operatelog.test.boot3.LogRecords.text;
 import static io.github.devoracode.operatelog.test.boot3.LogRecords.flag;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,7 +32,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  */
 @SpringBootTest(properties = {
         "operate-log.payload.max-request-length=2048",
-        "operate-log.payload.max-response-length=2048"
+        "operate-log.payload.max-response-length=2048",
+        "operate-log.payload.max-extra-length=2048",
+        "operate-log.mask.enabled=true"
 })
 @AutoConfigureMockMvc
 class OperateLogBoot3PayloadTruncationTest {
@@ -111,6 +114,22 @@ class OperateLogBoot3PayloadTruncationTest {
         assertEquals(MAX_PAYLOAD_LENGTH, userAgent.length(), "userAgent 应恰好截到上限");
         assertTrue(userAgent.endsWith(TRUNCATED_SUFFIX), userAgent);
         assertTrue(flag(record, "success"));
+    }
+
+    /**
+     * extra 由开发者主动写入，本组件不脱敏（README 明确提醒不要塞敏感数据）。
+     * 但坏值（循环引用 / getter 抛错）不得拖垮整条记录，超限必须收缩到窗口内。
+     */
+    @Test
+    void extraIsBoundedAndSerializationFailureIsControlled() throws Exception {
+        this.mockMvc.perform(get("/demo/extra-security"));
+
+        Map<String, Object> record = lastRecord();
+        Object extraValue = record.get("extra");
+        assertTrue(extraValue != null, "extra 应随记录落地，不因单个坏值整条丢失: " + record);
+        String extra = String.valueOf(extraValue);
+        assertTrue(extra.length() <= 2048, "extra payload exceeds configured limit: " + extra.length());
+        assertTrue(extra.contains("UNSERIALIZABLE"), "坏值应降级为占位符: " + extra);
     }
 
     private int countRecords() {

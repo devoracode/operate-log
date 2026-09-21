@@ -95,6 +95,9 @@ public class OperateLogProperties {
         /** errorStack / errorMessage 最大字符数（含截断标记），<=0 不截断。 */
         private int maxErrorLength = 0;
 
+        /** extra 整体序列化后最大字符数（含截断标记），<=0 不截断。 */
+        private int maxExtraLength = 0;
+
         /**
          * 序列化时跳过的参数类型（全限定类名，命中父类或任意接口即算），日志中占位为
          * {@code <IGNORED:类型简名>}。注意是整体替换内置默认列表，不是追加。

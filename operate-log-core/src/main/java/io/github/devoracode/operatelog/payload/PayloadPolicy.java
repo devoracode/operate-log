@@ -30,6 +30,7 @@ public class PayloadPolicy {
      * errorStack 与 errorMessage 共用同一上限。
      */
     private final int maxErrorLength;
+    private final int maxExtraLength;
     private final Set<String> ignoredTypes;
     /**
      * 参数类型 → 命中忽略项的解析缓存（{@link Optional#empty()} 哨兵表示无命中）：
@@ -51,10 +52,12 @@ public class PayloadPolicy {
     public PayloadPolicy(int maxRequestLength,
                          int maxResponseLength,
                          int maxErrorLength,
+                         int maxExtraLength,
                          Collection<String> ignoredTypes) {
         this.maxRequestLength = maxRequestLength;
         this.maxResponseLength = maxResponseLength;
         this.maxErrorLength = maxErrorLength;
+        this.maxExtraLength = maxExtraLength;
         this.ignoredTypes = normalize(ignoredTypes);
     }
 
@@ -118,6 +121,10 @@ public class PayloadPolicy {
      */
     public int getMaxErrorLength() {
         return this.maxErrorLength;
+    }
+
+    public int getMaxExtraLength() {
+        return this.maxExtraLength;
     }
 
     /**

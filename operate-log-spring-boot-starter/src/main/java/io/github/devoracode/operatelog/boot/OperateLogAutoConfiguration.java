@@ -121,6 +121,7 @@ public class OperateLogAutoConfiguration {
             return new PayloadPolicy(payload.getMaxRequestLength(),
                     payload.getMaxResponseLength(),
                     payload.getMaxErrorLength(),
+                    payload.getMaxExtraLength(),
                     payload.getIgnoreTypes());
         }
 

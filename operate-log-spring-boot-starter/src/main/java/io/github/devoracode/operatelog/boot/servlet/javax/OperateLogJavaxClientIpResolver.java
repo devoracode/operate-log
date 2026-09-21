@@ -20,6 +20,8 @@ import javax.servlet.http.HttpServletRequest;
 public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
     private static final String FORWARDED_FOR = "X-Forwarded-For";
     private static final String REAL_IP = "X-Real-IP";
+    /** 代理头长度上限：超长头几乎必为伪造 / 溢出攻击载荷，直接判为不可信。 */
+    private static final int MAX_HEADER_LENGTH = 256;
     /** 是否信任反向代理头；代理不可信时开启会被客户端伪造 IP。 */
     private final boolean trustProxy;
 
@@ -33,21 +35,86 @@ public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
         if (request == null) {
             return null;
         }
-        // 信任代理时取代理透传头；否则取容器直连地址
+        // 信任代理时取代理透传头，但必须过 IP 格式 + 长度校验，非法即回落到直连地址
         if (this.trustProxy) {
             String forwardedFor = request.getHeader(FORWARDED_FOR);
             if (StringUtils.isNotBlank(forwardedFor)) {
-                // 注意：链首为客户端自报值，伪造风险由可信网络边界承担；
-                // 严格审计场景应自右向左跳过 N 个可信代理节点
-                return StringUtils.trim(StringUtils.substringBefore(forwardedFor, ","));
+                // 链首为最接近客户端的一跳，长度超限（伪造 / 溢出载荷）或格式非法则跳过
+                if (forwardedFor.length() <= MAX_HEADER_LENGTH) {
+                    String candidate = StringUtils.trim(StringUtils.substringBefore(forwardedFor, ","));
+                    if (isValidIp(candidate)) {
+                        return candidate;
+                    }
+                }
             }
             String realIp = request.getHeader(REAL_IP);
             if (StringUtils.isNotBlank(realIp)) {
-                return StringUtils.trim(realIp);
+                String trimmed = StringUtils.trim(realIp);
+                if (trimmed.length() <= MAX_HEADER_LENGTH && isValidIp(trimmed)) {
+                    return trimmed;
+                }
             }
         }
-        // 兜底：容器直连地址
+        // 兜底：容器直连地址（不可被客户端头伪造）
         return request.getRemoteAddr();
+    }
+
+    private static boolean isValidIp(String value) {
+        if (StringUtils.isBlank(value)) {
+            return false;
+        }
+        // IPv4: four dot-separated decimal octets
+        if (value.indexOf(':') < 0) {
+            String[] parts = value.split("\\.");
+            if (parts.length != 4) {
+                return false;
+            }
+            for (String part : parts) {
+                if (part.isEmpty() || part.length() > 3) {
+                    return false;
+                }
+                for (int i = 0; i < part.length(); i++) {
+                    char c = part.charAt(i);
+                    if (c < '0' || c > '9') {
+                        return false;
+                    }
+                }
+                int v = Integer.parseInt(part);
+                if (v < 0 || v > 255) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        // IPv6: hex chars, colons, optional brackets, at most one ::
+        String s = value;
+        if (s.startsWith("[") && s.endsWith("]")) {
+            s = s.substring(1, s.length() - 1);
+        }
+        if (s.isEmpty()) {
+            return false;
+        }
+        int doubleColonCount = 0;
+        int idx = 0;
+        while (idx < s.length()) {
+            int next = s.indexOf("::", idx);
+            if (next >= 0) {
+                doubleColonCount++;
+                idx = next + 2;
+            } else {
+                break;
+            }
+        }
+        if (doubleColonCount > 1) {
+            return false;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || c == ':' || c == '.')) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** 当前线程绑定的 javax request；非 Web 场景或非本栈宿主返回 {@code null}。 */

@@ -63,6 +63,11 @@ public class OperateLogAspect {
      * traceId 默认 MDC key，可由 {@code operate-log.trace-id-mdc-key} 覆盖。
      */
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
+    /**
+     * {@link io.github.devoracode.operatelog.serializer.DefaultOperateLogSerializer} 序列化失败时的哨兵串；
+     * 探测 extra 单值能否被 Jackson 写出时按它判定。
+     */
+    private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
     private final HttpContextResolver httpContextResolver;
@@ -450,8 +455,10 @@ public class OperateLogAspect {
         }
         // 异常 message 是纯文本（非 JSON），走 plainText 脱敏路径
         String errorMessage = error == null ? null : error.getMessage();
+        String errorStack = error == null ? null : getStackTrace(error);
         if (this.maskEnabled) {
             errorMessage = this.sensitiveDataMasker.maskPlainText(errorMessage);
+            errorStack = this.sensitiveDataMasker.maskPlainText(errorStack);
         }
         String userAgent = httpContext == null ? null : httpContext.getUserAgent();
         // 截断在脱敏之后执行：无论脱敏使内容变长还是变短，落地的最终体积都不越界。
@@ -461,8 +468,7 @@ public class OperateLogAspect {
         responseBody = this.payloadPolicy.truncateResponse(responseBody);
         requestQuery = this.payloadPolicy.truncateRequest(requestQuery);
         userAgent = this.payloadPolicy.truncateRequest(userAgent);
-        Map<String, Object> extra = context.getExtra()
-                .isEmpty() ? null : new LinkedHashMap<String, Object>(context.getExtra());
+        Map<String, Object> extra = normalizeExtra(context.getExtra());
         return OperateLogRecord.builder()
                 .id(UUID.randomUUID().toString())
                 .traceId(context.getTraceId())
@@ -492,8 +498,7 @@ public class OperateLogAspect {
                 .endTime(context.getEndTime())
                 .errorType(error == null ? null : error.getClass().getName())
                 .errorMessage(this.payloadPolicy.truncateErrorMessage(errorMessage))
-                .errorStack(error == null ? null : this.payloadPolicy.truncateErrorStack(
-                        getStackTrace(error)))
+                .errorStack(this.payloadPolicy.truncateErrorStack(errorStack))
                 .extra(extra)
                 .build();
     }
@@ -506,13 +511,84 @@ public class OperateLogAspect {
     /**
      * 打印堆栈到限长缓冲：深递归异常（如无限递归）的完整堆栈可达数十万行，
      * 先构造完整字符串再截断会在内存里先撑起远超上限的副本。
+     * 上限（含 {@code <=0 不截断} 语义）由 {@link LimitedStringWriter} 自身处理，此处直接透传。
      */
     private String getStackTrace(Throwable throwable) {
-        LimitedStringWriter writer = new LimitedStringWriter(this.payloadPolicy.getMaxErrorLength());
+        StringWriter writer = new LimitedStringWriter(this.payloadPolicy.getMaxErrorLength());
         PrintWriter printWriter = new PrintWriter(writer);
         throwable.printStackTrace(printWriter);
         printWriter.flush();
         return writer.toString();
+    }
+
+    private Map<String, Object> normalizeExtra(Map<String, Object> source) {
+        if (source == null || source.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        for (Map.Entry<?, ?> entry : source.entrySet()) {
+            if (entry.getKey() != null) {
+                result.put(String.valueOf(entry.getKey()), toSerializableValue(entry.getValue()));
+            }
+        }
+        int limit = this.payloadPolicy.getMaxExtraLength();
+        if (limit > 0) {
+            enforceExtraLimit(result, limit);
+        }
+        return result.isEmpty() ? null : result;
+    }
+
+    /**
+     * 单值降级：仅保证「Jackson 能写出」这一件事。extra 由开发者在业务方法内主动写入，
+     * 本组件不做脱敏（脱敏是字段级安全控制，需要开发者明示字段的语义，工具替他们判定「哪个值是敏感」
+     * 只会误伤——README 明确提醒不要往 extra 里塞敏感数据）。
+     * 但一个循环引用 / getter 抛错的坏值会让整条记录在 handler 侧序列化失败被丢，所以必须逐值探测：
+     * 标量直返；非标量先序列化，写不出（{@link #UNSERIALIZABLE_SENTINEL}）就换成占位符，
+     * 让其他字段照常落地。
+     */
+    private Object toSerializableValue(Object value) {
+        if (value == null || value instanceof String || value instanceof Number
+                || value instanceof Boolean || value instanceof Character) {
+            return value;
+        }
+        String probe = this.serializer.serialize(value);
+        if (probe != null && !UNSERIALIZABLE_SENTINEL.equals(probe)) {
+            return value;
+        }
+        return "<UNSERIALIZABLE:" + value.getClass().getSimpleName() + ">";
+    }
+
+    /**
+     * 逐值收缩直至整体 JSON 不超上限；一次收缩至少缩 1 字符以保证收敛。
+     * 相比「整表转字符串一次截断」的降级，逐值收缩能保留排在下方的键（如 UNSERIALIZABLE 占位符）——
+     * 整表截断会让落在窗口外的诊断线索丢失，反而更难定位问题。
+     */
+    private void enforceExtraLimit(Map<String, Object> extra, int limit) {
+        String serialized = this.serializer.serialize(extra);
+        while (serialized != null && serialized.length() > limit && !extra.isEmpty()) {
+            Map.Entry<String, Object> longest = null;
+            int longestLength = -1;
+            for (Map.Entry<String, Object> entry : extra.entrySet()) {
+                int length = String.valueOf(entry.getValue()).length();
+                if (length > longestLength) {
+                    longest = entry;
+                    longestLength = length;
+                }
+            }
+            if (longest == null || longestLength <= 0) {
+                break;
+            }
+            int target = longestLength - (serialized.length() - limit);
+            if (target <= 0) {
+                // 缩无可缩（单值本身就超上限）：整表降级到 _truncated，至少保证不超过 limit
+                extra.clear();
+                extra.put("_truncated", PayloadPolicy.truncate(serialized, limit));
+                return;
+            }
+            extra.put(longest.getKey(),
+                    PayloadPolicy.truncate(String.valueOf(longest.getValue()), Math.min(target, longestLength - 1)));
+            serialized = this.serializer.serialize(extra);
+        }
     }
 
     /**

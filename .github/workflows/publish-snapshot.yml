@@ -1,0 +1,60 @@
+name: Publish SNAPSHOT
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# 与 release.yml 共用同一组，避免快照与正式发布并发上传 Central 互相踩
+concurrency:
+  group: maven-central-publish
+  cancel-in-progress: false
+
+jobs:
+  # 先读版本：不是 SNAPSHOT 就整个跳过，绝不把非快照版本推上 Central
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      snapshot: ${{ steps.version.outputs.snapshot }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: temurin
+          cache: maven
+      - name: Resolve the project version
+        id: version
+        run: |
+          VERSION=$(mvn --batch-mode --quiet -DforceStdout help:evaluate -Dexpression=project.version)
+          echo "project version is ${VERSION}"
+          case "${VERSION}" in
+            *-SNAPSHOT) echo "snapshot=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "snapshot=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  publish:
+    needs: check
+    if: needs.check.outputs.snapshot == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: '8'
+          distribution: temurin
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_TOKEN_USERNAME
+          server-password: CENTRAL_TOKEN_PASSWORD
+      - name: Publish SNAPSHOT to Maven Central
+        # -Prelease 提供 central-publishing-maven-plugin（0.7.0+ 对 -SNAPSHOT 自动路由到快照仓库）；
+        # Portal 对快照不做校验、可覆盖发布，签名无意义。
+        # -pl 只点根 POM 与两个库模块：test-boot2 / test-boot3 是可运行示例工程，绝不上传
+        run: >
+          mvn --errors --batch-mode deploy -Prelease -DskipTests -Dgpg.skip=true
+          -pl .,operate-log-core,operate-log-spring-boot-starter
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}

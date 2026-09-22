@@ -12,32 +12,6 @@
     <description>Operation log starter for Spring Boot 2.x and 3.x</description>
     <url>https://github.com/devoracode/operate-log</url>
 
-    <licenses>
-        <license>
-            <name>Apache License, Version 2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
-
-    <developers>
-        <developer>
-            <id>devoracode</id>
-            <name>devoracode</name>
-            <url>https://github.com/devoracode</url>
-        </developer>
-    </developers>
-
-    <scm>
-        <url>https://github.com/devoracode/operate-log</url>
-        <connection>scm:git:https://github.com/devoracode/operate-log.git</connection>
-    </scm>
-
-    <issueManagement>
-        <system>GitHub Issues</system>
-        <url>https://github.com/devoracode/operate-log/issues</url>
-    </issueManagement>
-
     <modules>
         <module>operate-log-core</module>
         <module>operate-log-spring-boot-starter</module>
@@ -290,4 +264,25 @@
             </build>
         </profile>
     </profiles>
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>devoracode</id>
+            <name>Wenjie Liu</name>
+            <email>wenger.liu2020@gmail.com</email>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/devoracode/operate-log</url>
+        <connection>scm:git:https://github.com/devoracode/operate-log.git</connection>
+        <developerConnection>scm:git:ssh://github.com/devoracode/operate-log.git</developerConnection>
+    </scm>
 </project>

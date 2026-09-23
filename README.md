@@ -31,7 +31,7 @@
 | 全链路关联 | traceId 取 MDC，key 可配（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系）；MDC 缺失时生成 UUID 并**回写 MDC**，同一次请求内多条记录共享同一值 |
 | 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
 | 载荷防护 | `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
-| 自定义字段 | 业务方法内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意业务字段（`extra`），无需扩展记录模型 |
+| 自定义字段 | 业务方法与 Resolver 内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意字段（`extra`），无需扩展记录模型 |
 | 宿主零污染 | 不注册任何 `ObjectMapper` bean，宿主 `spring.jackson.*` 与自定义 `Module` 不受影响；脱敏默认字段始终生效，配置只追加不移除 |
 | 可插拔扩展点 | Handler / 操作人解析 / HTTP 上下文解析 / 序列化 / 脱敏 / SpEL 引擎 / 载荷策略全部可替换（`@ConditionalOnMissingBean` 自动让位） |
 | 异常降级 | 操作人、HTTP 上下文解析失败时降级为 `null`，SpEL 表达式求值失败按方向降级（condition 视为通过、模板输出原文），日志其余字段照常记录 |
@@ -91,7 +91,14 @@ operate-log={"id":"...","traceId":"04d3122e-...","application":"order-app","envi
 public OperatorResolver operatorResolver() {
     return () -> {
         LoginUser user = LoginContextHolder.get(); // 你的登录态上下文
-        return user == null ? null : Operator.builder()
+        if (user == null) {
+            return null;
+        }
+        // 角色这类扩展属性写进 extra，不占记录字段
+        OperateLogContextHolder.putExtra("roleId", user.getRoleId());
+        OperateLogContextHolder.putExtra("roleCode", user.getRoleCode());
+        OperateLogContextHolder.putExtra("roleName", user.getRoleName());
+        return Operator.builder()
                 .userId(user.getId())
                 .userAccount(user.getAccount())
                 .userName(user.getName())
@@ -99,6 +106,8 @@ public OperatorResolver operatorResolver() {
     };
 }
 ```
+
+`Operator` 刻意只留三要素：角色、部门、租户的形状各系统差别太大（单角色 / 多角色 / 角色带层级），做成固定字段等于把某一家的模型钉进公共契约。解析器在日志上下文绑定之后执行，所以 `resolve()` 内可以直接写 `extra`——多角色 `putExtra("roleCodes", user.getRoles())`，多个键也可用 `putExtras(Map)` 一次写入。这些键与业务方法内写入的共存，同样不自动脱敏（见「日志输出字段」）。
 
 ---
 
@@ -258,7 +267,7 @@ operate-log:
 | `costTime` | 运行时 | 耗时（毫秒） |
 | `startTime` / `endTime` | 运行时 | 起止时间（`Instant`，ISO-8601） |
 | `errorType` / `errorMessage` / `errorStack` | 运行时 | 异常类名 / message / 堆栈（message 与堆栈按 `payload.max-error-length` 截断），正常时为 `null` |
-| `extra` | `OperateLogContextHolder#putExtra` | 业务自定义字段（Map），方法内写入、随记录落地；**由开发者主动写入，本组件不对其脱敏**（脱敏需要字段的业务语义，工具无法代判，硬猜只会误伤），请勿往 `extra` 里放密码 / token 等敏感数据；坏值（循环引用 / getter 抛错）降级为 `<UNSERIALIZABLE:类型>` 占位、不拖垮整条日志，整体按 `payload.max-extra-length` 逐值收缩限长；未写入时为 `null` |
+| `extra` | `OperateLogContextHolder#putExtra`（业务方法内 / 各 Resolver 内） | 业务自定义字段（Map），写入后随记录落地；**由开发者主动写入，本组件不对其脱敏**（脱敏需要字段的业务语义，工具无法代判，硬猜只会误伤），请勿往 `extra` 里放密码 / token 等敏感数据；坏值（循环引用 / getter 抛错）降级为 `<UNSERIALIZABLE:类型>` 占位、不拖垮整条日志，整体按 `payload.max-extra-length` 逐值收缩限长；未写入时为 `null` |
 
 > 所有可能为 `null` 的字段在 JSON 中保留为 `null` 值，便于下游解析 schema 稳定。
 > `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 均受 `payload.*` 长度上限保护，超限截断。
@@ -309,7 +318,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 
 ### 示例：业务自定义字段（extra）
 
-落库方常常要记一些日志模型没有的业务字段（渠道、金额、审批单号……）。无需扩展 `OperateLogRecord`，在业务方法内写 `extra` 即可：
+落库方常常要记一些日志模型没有的业务字段（渠道、金额、审批单号……）。无需扩展 `OperateLogRecord`，在业务方法内写 `extra` 即可（操作人角色等登录态属性同理，在 `OperatorResolver` 内写，见「快速开始」第 3 步）：
 
 ```java
 @OperateLog(module = "order", operation = "cancel", type = OperateType.UPDATE,
@@ -359,7 +368,8 @@ public SensitiveDataMasker operateLogSensitiveDataMasker(ObjectMapper objectMapp
 OperateLogAspect @Around 拦截
         │
         ├─► 解析 MDC traceId（key 可配，缺失生成 UUID）
-        ├─► OperatorResolver 解析操作人（异常降级 null）
+        ├─► 绑定线程上下文（OperateLogContextHolder.bind）
+        ├─► OperatorResolver 解析操作人（异常降级 null；resolve() 内可写 extra）
         ├─► HttpContextResolver#resolve() 采集 HTTP 请求侧信息：method/url/uri/query/headers/ip/UA
         │     （不采集 response status，理由见「为什么没有 httpStatus」）
         ▼

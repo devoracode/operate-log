@@ -6,7 +6,7 @@
     <parent>
         <groupId>io.github.devoracode</groupId>
         <artifactId>operate-log</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
+        <version>${revision}</version>
     </parent>
 
     <artifactId>operate-log-spring-boot-starter</artifactId>
@@ -36,7 +36,7 @@
         <dependency>
             <groupId>io.github.devoracode</groupId>
             <artifactId>operate-log-core</artifactId>
-            <version>${project.version}</version>
+            <version>${revision}</version>
         </dependency>
 
         <!-- jackson-databind / jsr310：宿主提供，provided 不传递 -->

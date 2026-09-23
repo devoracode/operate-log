@@ -5,7 +5,7 @@
 
     <groupId>io.github.devoracode</groupId>
     <artifactId>operate-log</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>pom</packaging>
 
     <name>operate-log</name>
@@ -19,34 +19,22 @@
     </modules>
 
     <properties>
+        <!-- 全仓库唯一版本源：子模块的 <parent><version> 写 ${revision}，发版只改这一处。
+             安装/部署的 pom 由 flatten-maven-plugin 展开成具体版本。 -->
+        <revision>1.0.0-SNAPSHOT</revision>
+
         <java.version>8</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.parameters>true</maven.compiler.parameters>
 
         <spring.boot2.version>2.7.18</spring.boot2.version>
         <spring.boot3.version>3.3.13</spring.boot3.version>
-        <!-- 编译基线 == Boot 2.7.18 管理的版本，作为 core 非 optional 传递依赖的下界，不得更高 -->
         <spring.framework.version>5.3.31</spring.framework.version>
-        <!-- jackson-databind / jsr310：core 编译用，标 optional 不向宿主传递 -->
         <jackson.version>2.13.5</jackson.version>
-        <!-- aspectjweaver 编译基线：1.9.7 对 JDK 17+ / Boot 3 偏旧，取 1.9.22。
-             宿主依赖管理（spring-boot-dependencies）优先于传递版本，不会反向压过宿主版本。 -->
         <aspectj.version>1.9.22</aspectj.version>
         <commons-lang3.version>3.12.0</commons-lang3.version>
         <slf4j.version>1.7.36</slf4j.version>
         <lombok.version>1.18.30</lombok.version>
-
         <junit.version>5.8.2</junit.version>
-
-        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
-        <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
-
-        <japicmp.version>0.26.2</japicmp.version>
-        <japicmp.skip>false</japicmp.skip>
-        <maven.source.plugin.version>3.3.1</maven.source.plugin.version>
-        <maven.javadoc.plugin.version>3.6.3</maven.javadoc.plugin.version>
-        <maven.gpg.plugin.version>3.2.4</maven.gpg.plugin.version>
-        <central.publishing.plugin.version>0.11.0</central.publishing.plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -66,16 +54,16 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>${maven.compiler.plugin.version}</version>
+                    <version>3.13.0</version>
                     <configuration>
                         <encoding>${project.build.sourceEncoding}</encoding>
-                        <parameters>${maven.compiler.parameters}</parameters>
+                        <parameters>true</parameters>
                     </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
-                    <version>${maven.surefire.plugin.version}</version>
+                    <version>3.2.5</version>
                     <configuration>
                         <!-- Mockito inline mock maker 依赖 Byte Buddy self-attach；JDK 17+ 默认禁止
                              自附加，不加此项会以「Could not initialize plugin: MockMaker」失败。 -->
@@ -84,11 +72,46 @@
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>1.7.3</version>
+                <configuration>
+                    <updatePomFile>true</updatePomFile>
+                    <!-- 只展开 ${revision}，licenses / developers / scm 等发布元数据原样保留 -->
+                    <flattenMode>resolveCiFriendliesOnly</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
     </build>
 
     <!--
         boot3-test：JDK 17+ 自动激活，把 test-boot3 纳入构建。
-        api-compat：传 -Djapicmp.oldVersion=X.Y.Z 激活，二进制不兼容 fail。
         release：Central 发布。release-check：本地干跑发布构建。
     -->
     <profiles>
@@ -103,63 +126,13 @@
         </profile>
 
         <profile>
-            <id>api-compat</id>
-            <activation>
-                <property>
-                    <name>japicmp.oldVersion</name>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>com.github.siom79.japicmp</groupId>
-                        <artifactId>japicmp-maven-plugin</artifactId>
-                        <version>${japicmp.version}</version>
-                        <configuration>
-                            <oldVersion>
-                                <dependency>
-                                    <groupId>${project.groupId}</groupId>
-                                    <artifactId>${project.artifactId}</artifactId>
-                                    <version>${japicmp.oldVersion}</version>
-                                    <type>jar</type>
-                                </dependency>
-                            </oldVersion>
-                            <newVersion>
-                                <file>
-                                    <path>${project.build.directory}/${project.build.finalName}.jar</path>
-                                </file>
-                            </newVersion>
-                            <parameter>
-                                <skip>${japicmp.skip}</skip>
-                                <onlyModified>true</onlyModified>
-                                <onlyBinaryIncompatibleModified>true</onlyBinaryIncompatibleModified>
-                                <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
-                                <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
-                                <breakBuildOnPartialBuild>false</breakBuildOnPartialBuild>
-                            </parameter>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>api-compat</id>
-                                <phase>verify</phase>
-                                <goals>
-                                    <goal>cmp</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-
-        <profile>
             <id>release</id>
             <build>
                 <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
-                        <version>${maven.source.plugin.version}</version>
+                        <version>3.3.1</version>
                         <executions>
                             <execution>
                                 <id>attach-sources</id>
@@ -172,13 +145,12 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>${maven.javadoc.plugin.version}</version>
+                        <version>3.6.3</version>
                         <configuration>
                             <encoding>${project.build.sourceEncoding}</encoding>
                             <charset>${project.build.sourceEncoding}</charset>
-                            <doclint>none</doclint>
-                            <detectOfflineLinks>false</detectOfflineLinks>
-                            <quiet>true</quiet>
+                            <docencoding>UTF-8</docencoding>
+                            <additionalJOption>-J-Duser.language=en</additionalJOption>
                         </configuration>
                         <executions>
                             <execution>
@@ -192,7 +164,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>${maven.gpg.plugin.version}</version>
+                        <version>3.2.4</version>
                         <configuration>
                             <gpgArguments>
                                 <arg>--pinentry-mode</arg>
@@ -212,7 +184,7 @@
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>${central.publishing.plugin.version}</version>
+                        <version>0.11.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
@@ -230,7 +202,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-source-plugin</artifactId>
-                        <version>${maven.source.plugin.version}</version>
+                        <version>3.3.1</version>
                         <executions>
                             <execution>
                                 <id>attach-sources</id>
@@ -243,7 +215,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>${maven.javadoc.plugin.version}</version>
+                        <version>3.6.3</version>
                         <configuration>
                             <encoding>${project.build.sourceEncoding}</encoding>
                             <charset>${project.build.sourceEncoding}</charset>

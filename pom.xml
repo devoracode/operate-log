@@ -100,7 +100,7 @@
 
     <!--
         boot3-test：JDK 17+ 自动激活，把 test-boot3 纳入构建。
-        release：Central 发布。release-check：本地干跑发布构建。
+        release：Central 发布；本地干跑用 -Prelease -DskipTests -Dgpg.skip=true verify。
     -->
     <profiles>
         <profile>
@@ -178,47 +178,6 @@
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>true</autoPublish>
                         </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-
-        <profile>
-            <id>release-check</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-source-plugin</artifactId>
-                        <version>3.3.1</version>
-                        <executions>
-                            <execution>
-                                <id>attach-sources</id>
-                                <goals>
-                                    <goal>jar-no-fork</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>3.6.3</version>
-                        <configuration>
-                            <encoding>${project.build.sourceEncoding}</encoding>
-                            <charset>${project.build.sourceEncoding}</charset>
-                            <doclint>none</doclint>
-                            <detectOfflineLinks>false</detectOfflineLinks>
-                            <quiet>true</quiet>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>attach-javadocs</id>
-                                <goals>
-                                    <goal>jar</goal>
-                                </goals>
-                            </execution>
-                        </executions>
                     </plugin>
                 </plugins>
             </build>

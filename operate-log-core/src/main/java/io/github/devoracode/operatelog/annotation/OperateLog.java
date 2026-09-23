@@ -70,16 +70,16 @@ public @interface OperateLog {
     RecordOn recordOn() default RecordOn.ALWAYS;
 
     /**
-     * 是否记录方法参数（序列化进 {@code requestBody}）。
+     * 是否记录方法参数。
      *
      * @return {@code true} 表示序列化入参写入 {@code requestBody}；默认 {@code true}
      */
     boolean recordRequest() default true;
 
     /**
-     * 是否记录返回值（序列化进 {@code responseBody}），需显式开启。
+     * 是否记录返回值，需显式开启。
      *
-     * @return {@code true} 表示序列化返回值写入 {@code responseBody}；默认 {@code false} 即不记响应体
+     * @return {@code true} 表示序列化返回值写入 {@code responseBody}；默认 {@code false}
      */
     boolean recordResponse() default false;
 }

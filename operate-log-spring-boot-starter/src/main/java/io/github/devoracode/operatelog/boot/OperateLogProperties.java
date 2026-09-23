@@ -44,7 +44,6 @@ public class OperateLogProperties {
     /** 载荷防护配置。 */
     private Payload payload = new Payload();
 
-    /** HTTP 请求采集配置；两项默认关闭（不信任代理头、不采集请求头）。 */
     @Data
     public static class Http {
 
@@ -55,7 +54,6 @@ public class OperateLogProperties {
         private boolean captureHeaders;
     }
 
-    /** 敏感数据脱敏配置；默认启用，命中字段统一替换为 maskText。 */
     @Data
     public static class Mask {
 
@@ -73,7 +71,6 @@ public class OperateLogProperties {
         private Set<String> fields = new LinkedHashSet<String>();
     }
 
-    /** SpEL 引擎配置；默认启用，表达式按 cacheSize 条 LRU 缓存。 */
     @Data
     public static class Spel {
 
@@ -84,7 +81,6 @@ public class OperateLogProperties {
         private int cacheSize = 1024;
     }
 
-    /** 载荷防护配置；各长度上限默认 0（不截断），ignoreTypes 防止序列化危险类型。 */
     @Data
     public static class Payload {
 

@@ -19,9 +19,9 @@ public final class OperateLogContextHolder {
     }
 
     /**
-     * 当前线程上下文；切面管辖范围之外返回 {@code null}。
+     * 当前线程上下文。
      *
-     * @return 已绑定的执行上下文，未绑定时为 null
+     * @return 已绑定的执行上下文；切面管辖范围之外（未绑定）为 {@code null}
      */
     public static OperateLogContext current() {
         return HOLDER.get();
@@ -30,8 +30,8 @@ public final class OperateLogContextHolder {
     /**
      * 追加单个自定义字段；空键忽略。
      *
-     * @param key 自定义字段名，null 或空串时忽略本次写入
-     * @param value 字段值，随记录 extra 直接序列化落地，勿放敏感数据
+     * @param key   自定义字段名
+     * @param value 字段值，未经脱敏直接序列化落地
      */
     public static void putExtra(String key, Object value) {
         if (StringUtils.isEmpty(key)) {
@@ -47,7 +47,7 @@ public final class OperateLogContextHolder {
     /**
      * 批量追加自定义字段；{@code null} 或空集合忽略。
      *
-     * @param extras 待合并的自定义字段集合，同名键覆盖已有值
+     * @param extras 待合并的字段集合，同名键覆盖已有值
      */
     public static void putExtras(Map<String, ?> extras) {
         if (extras == null || extras.isEmpty()) {
@@ -63,7 +63,7 @@ public final class OperateLogContextHolder {
     /**
      * 绑定上下文。<b>框架内部使用</b>，业务代码请勿调用。
      *
-     * @param context 切面为本次方法调用创建的执行上下文，绑定后 current 与 putExtra 系列方可生效
+     * @param context 切面为本次调用创建的上下文
      */
     public static void bind(OperateLogContext context) {
         HOLDER.set(context);

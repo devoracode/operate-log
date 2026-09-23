@@ -35,11 +35,6 @@ public class OperateLogContext {
     /** 业务自定义字段，经 {@link OperateLogContextHolder} 写入，随记录一起落地。 */
     private final Map<String, Object> extra = new LinkedHashMap<String, Object>();
 
-    /**
-     * 本次调用是否捕获到异常。
-     *
-     * @return {@code error} 非空时为 true
-     */
     public boolean hasError() {
         return this.error != null;
     }

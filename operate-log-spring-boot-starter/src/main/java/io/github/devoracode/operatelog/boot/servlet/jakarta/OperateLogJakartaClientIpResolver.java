@@ -24,11 +24,6 @@ public class OperateLogJakartaClientIpResolver implements ClientIpResolver {
     /** 是否信任反向代理头；代理不可信时开启会被客户端伪造 IP。 */
     private final boolean trustProxy;
 
-    /**
-     * 以指定代理信任策略构造；trustProxy 对应 operate-log.http.trust-proxy。
-     *
-     * @param trustProxy 是否采信 {@code X-Forwarded-For} / {@code X-Real-IP}；{@code false} 时只用容器直连地址
-     */
     public OperateLogJakartaClientIpResolver(boolean trustProxy) {
         this.trustProxy = trustProxy;
     }

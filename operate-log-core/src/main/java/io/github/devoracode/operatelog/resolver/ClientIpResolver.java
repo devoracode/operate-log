@@ -4,10 +4,9 @@ package io.github.devoracode.operatelog.resolver;
 public interface ClientIpResolver {
 
     /**
-     * 当前请求客户端 IP；没有 HTTP 请求时返回 {@code null}。
+     * 当前请求客户端 IP。
      *
-     * @return 客户端 IP 字面量；无法判定时为 {@code null}。Starter 的默认实现按
-     *         {@code operate-log.http.trust-proxy} 决定是否采信代理头
+     * @return 客户端 IP 字面量；无 HTTP 请求或解析不到时为 {@code null}
      */
     String resolve();
 }

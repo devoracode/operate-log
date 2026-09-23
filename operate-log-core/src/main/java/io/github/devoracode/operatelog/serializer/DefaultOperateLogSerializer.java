@@ -15,9 +15,6 @@ public class DefaultOperateLogSerializer implements OperateLogSerializer {
 
     private final ObjectMapper objectMapper;
 
-    /**
-     * @param objectMapper 写出 JSON 用的 Jackson mapper，为宿主 mapper 的副本或组件兜底实例
-     */
     public DefaultOperateLogSerializer(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
@@ -31,7 +28,6 @@ public class DefaultOperateLogSerializer implements OperateLogSerializer {
         return serialized == null ? UNSERIALIZABLE : serialized;
     }
 
-    /** 优先整体序列化；失败则逐元素降级，坏元素换成占位符。 */
     @Override
     public String serializeArguments(Object[] arguments) {
         if (ArrayUtils.isEmpty(arguments)) {

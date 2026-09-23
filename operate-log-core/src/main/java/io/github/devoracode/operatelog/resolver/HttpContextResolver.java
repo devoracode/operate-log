@@ -13,10 +13,9 @@ import io.github.devoracode.operatelog.model.HttpContext;
 public interface HttpContextResolver {
 
     /**
-     * 当前 HTTP 请求上下文；非 HTTP 场景返回 {@code null}。
+     * 当前 HTTP 请求上下文。
      *
-     * @return 请求侧快照 {@link HttpContext}（method / url / uri / query / headers / ip / userAgent），
-     *         线程未绑定请求时为 {@code null}
+     * @return 请求侧快照 {@link HttpContext}；线程未绑定请求时为 {@code null}
      */
     HttpContext resolve();
 }

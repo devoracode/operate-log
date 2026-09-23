@@ -22,12 +22,6 @@ public class OperateLogJakartaHttpContextResolver implements HttpContextResolver
     private final ClientIpResolver clientIpResolver;
     private final boolean captureHeaders;
 
-    /**
-     * 构造上下文解析器；captureHeaders 对应 operate-log.http.capture-headers，关闭则不采集请求头。
-     *
-     * @param clientIpResolver 提供 {@code clientIp} 的本栈解析器，不可为 {@code null}
-     * @param captureHeaders   是否采集请求头
-     */
     public OperateLogJakartaHttpContextResolver(ClientIpResolver clientIpResolver, boolean captureHeaders) {
         this.clientIpResolver = clientIpResolver;
         this.captureHeaders = captureHeaders;

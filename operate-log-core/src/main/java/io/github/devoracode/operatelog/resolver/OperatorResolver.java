@@ -6,9 +6,9 @@ import io.github.devoracode.operatelog.model.Operator;
 public interface OperatorResolver {
 
     /**
-     * 当前操作人；取不到时返回 {@code null}。
+     * 当前操作人。
      *
-     * @return 操作人 {@link Operator}（用户 ID / 账号 / 名称），落到记录的对应字段；无登录态时为 {@code null}
+     * @return 操作人 {@link Operator}；无登录态时为 {@code null}
      */
     Operator resolve();
 }

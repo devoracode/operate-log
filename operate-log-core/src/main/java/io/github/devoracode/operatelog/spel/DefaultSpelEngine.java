@@ -49,19 +49,10 @@ public class DefaultSpelEngine implements SpelEngine {
     private final Map<Method, String[]> parameterNameCache;
     private final boolean enabled;
 
-    /**
-     * 启用 SpEL 的便捷构造。
-     *
-     * @param cacheSize 缓存条目上限，小于 64 时按 64 生效
-     */
     public DefaultSpelEngine(int cacheSize) {
         this(cacheSize, true);
     }
 
-    /**
-     * @param cacheSize 表达式缓存与方法参数名缓存共用的条目上限，超出按 LRU 淘汰
-     * @param enabled   引擎总开关；{@code false} 时零求值（条件恒通过、模板原样输出、求值返回 {@code null}）
-     */
     public DefaultSpelEngine(int cacheSize, boolean enabled) {
         this.enabled = enabled;
         final int maxCacheSize = Math.max(cacheSize, 64);

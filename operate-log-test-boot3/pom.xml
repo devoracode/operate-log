@@ -16,6 +16,8 @@
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
+        <!-- 示例应用不发布，不必生成 javadoc；CI 的门禁只针对两个库模块 -->
+        <maven.javadoc.skip>true</maven.javadoc.skip>
     </properties>
 
     <!-- import Boot 3 BOM，jackson / logback / slf4j 全部由 BOM 定版；

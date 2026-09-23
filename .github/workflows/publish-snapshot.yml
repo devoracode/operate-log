@@ -1,7 +1,10 @@
 name: Publish SNAPSHOT
 
+# 不直接跟 push：CI 那条 run 全绿后由 workflow_run 接力，避免把没验过的提交推上快照仓库。
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -11,13 +14,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 先读版本：不是 SNAPSHOT 就整个跳过，绝不把非快照版本推上 Central
+  # 读版本：非 SNAPSHOT 就整个跳过，绝不把非快照版本推上 Central
   check:
+    # 手动 dispatch 时没有 workflow_run 上下文，直接放行；链式触发只认 CI 的 success
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       snapshot: ${{ steps.version.outputs.snapshot }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # workflow_run 的 github.sha 是触发时默认分支的最新提交，不等于刚跑完 CI 的那次；
+          # 连续两次 push 时会错位，必须钉回 CI 实际验过的 head_sha
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-java@v4
         with:
           java-version: '8'
@@ -39,6 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Set up JDK 8
         uses: actions/setup-java@v4
         with:

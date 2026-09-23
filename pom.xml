@@ -49,37 +49,25 @@
     </dependencyManagement>
 
     <build>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.13.0</version>
-                    <configuration>
-                        <encoding>${project.build.sourceEncoding}</encoding>
-                        <parameters>true</parameters>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>3.2.5</version>
-                    <configuration>
-                        <!-- Mockito inline mock maker 依赖 Byte Buddy self-attach；JDK 17+ 默认禁止
-                             自附加，不加此项会以「Could not initialize plugin: MockMaker」失败。 -->
-                        <argLine>-Djdk.attach.allowAttachSelf=true</argLine>
-                    </configuration>
-                </plugin>
-            </plugins>
-        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                    <parameters>true</parameters>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <!-- Mockito inline mock maker 依赖 Byte Buddy self-attach；JDK 17+ 默认禁止
+                         自附加，不加此项会以「Could not initialize plugin: MockMaker」失败。 -->
+                    <argLine>-Djdk.attach.allowAttachSelf=true</argLine>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

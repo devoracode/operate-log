@@ -12,11 +12,10 @@
     <artifactId>operate-log-test-boot3</artifactId>
 
     <name>operate-log-test-boot3</name>
-    <description>Boot 3.x 冒烟示例（jakarta 栈），不参与发布与二进制兼容检查。</description>
+    <description>Boot 3.x 冒烟示例（jakarta 栈），不参与发布。</description>
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
-        <japicmp.skip>true</japicmp.skip>
     </properties>
 
     <!-- import Boot 3 BOM，jackson / logback / slf4j 全部由 BOM 定版；

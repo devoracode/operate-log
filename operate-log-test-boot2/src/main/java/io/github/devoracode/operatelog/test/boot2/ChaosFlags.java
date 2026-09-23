@@ -5,15 +5,17 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 日志侧组件的「按需故障」开关，供 Business Zero Impact 用例逐个点亮。
+ * 日志侧组件的「按需开关」，供用例逐个点亮：故障注入验证业务零影响，
+ * {@link #OPERATOR_EXTRA} 打开解析器往 {@code extra} 写操作人属性的行为。
  *
- * <p>用静态开关而不是为每个故障场景另起 Spring 上下文：注入点（{@link TestOperatorResolver}
+ * <p>用静态开关而不是为每个场景另起 Spring 上下文：注入点（{@link TestOperatorResolver}
  * 与测试里的 serializer / handler bean）要和真实容器组合验证，一个上下文即可覆盖全部场景。
  * 默认全关，冒烟运行行为不变；用例内 {@code enable} / {@code disableAll} 成对出现，
  * 集合用并发容器兜底。</p>
  */
 public final class ChaosFlags {
     public static final String OPERATOR = "operator";
+    public static final String OPERATOR_EXTRA = "operator-extra";
     public static final String SERIALIZER = "serializer";
     public static final String HANDLER = "handler";
 

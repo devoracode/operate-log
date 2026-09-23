@@ -32,7 +32,6 @@ public class OperateLogContext {
     private long costTime;
     private Instant startTime;
     private Instant endTime;
-    /** 业务自定义字段，经 {@link OperateLogContextHolder} 写入，随记录一起落地。 */
     private final Map<String, Object> extra = new LinkedHashMap<String, Object>();
 
     public boolean hasError() {

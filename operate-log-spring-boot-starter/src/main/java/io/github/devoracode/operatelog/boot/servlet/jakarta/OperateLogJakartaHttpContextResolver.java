@@ -51,7 +51,6 @@ public class OperateLogJakartaHttpContextResolver implements HttpContextResolver
                 .build();
     }
 
-    /** 采集请求头；多值头以逗号拼接（RFC 7230），保证审计完整。 */
     private Map<String, String> resolveHeaders(HttpServletRequest request) {
         Map<String, String> headers = new LinkedHashMap<String, String>();
         Enumeration<String> headerNames = request.getHeaderNames();

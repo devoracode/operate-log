@@ -54,9 +54,7 @@ import java.util.UUID;
 @Order(Ordered.LOWEST_PRECEDENCE)
 public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
-    /** traceId 默认 MDC key，可由 {@code operate-log.trace-id-mdc-key} 覆盖。 */
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
-    /** {@code DefaultOperateLogSerializer} 序列化失败哨兵，用于探测 extra 单值能否写出。 */
     private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
@@ -70,28 +68,10 @@ public class OperateLogAspect {
     private final boolean maskEnabled;
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
-    /** 注解查找缓存：定容 LRU，热部署下旧 ClassLoader 引用随淘汰释放。 */
     private final Map<AnnotationCacheKey, Optional<OperateLog>> annotationCache;
 
-    /**
-     * 供宿主直接 {@code new} 以自定义切点。参数顺序即二进制签名，
-     * <b>新增字段只能追加到末尾、禁止重排</b>——切面是可覆盖的扩展点，改序会让已编译宿主静默错位。
-     *
-     * @param handler             日志落地出口，组装完成的记录交由它写出
-     * @param operatorResolver    业务方法执行前解析当前操作人，失败降级为 {@code null}
-     * @param httpContextResolver 采集请求侧 HTTP 快照（method / url / headers / query 等）
-     * @param serializer          把入参、返回值、请求头等对象转成 JSON 文本
-     * @param sensitiveDataMasker 脱敏器，仅在 {@code maskEnabled} 为 {@code true} 时被调用
-     * @param spelEngine          渲染 {@code description}、求值 {@code businessId} 与 {@code condition}
-     * @param application         写入记录 {@code application} 字段的应用名，用于多应用共库时区分
-     * @param environment         写入记录 {@code environment} 字段的运行环境
-     * @param version             写入记录 {@code version} 字段的应用版本号
-     * @param maskEnabled         脱敏总开关；{@code false} 时跳过 {@code sensitiveDataMasker}，各字段原样落地
-     * @param payloadPolicy       载荷防护策略：参数过滤与各字段的长度截断
-     * @param traceIdMdcKey       读取宿主 traceId 的 MDC key，空白时回落到默认的 {@code traceId}
-     * @param annotationCacheSize 注解查找 LRU 缓存的条目上限（缓存「方法 + 目标类 → {@link OperateLog}」解析结果），
-     *                            小于 64 时按 64 生效
-     */
+    // 参数顺序即二进制签名：README 指引宿主自行 new 本切面以扩大切点，新增字段只能追加到末尾、
+    // 禁止重排——改序会让已编译的宿主按位置静默错位传参
     public OperateLogAspect(OperateLogHandler handler,
                             OperatorResolver operatorResolver,
                             HttpContextResolver httpContextResolver,
@@ -200,9 +180,6 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 日志收尾：计时 → 组装落地。运行于切面 {@code finally}，逃逸异常会顶替业务异常，故不外抛。
-     */
     private void finishQuietly(OperateLogContext context) {
         try {
             context.setEndTime(Instant.now());
@@ -215,7 +192,6 @@ public class OperateLogAspect {
         }
     }
 
-    /** 嵌套场景下恢复外层上下文，否则解绑当前线程。 */
     private void restorePreviousContext(OperateLogContext previous) {
         if (previous == null) {
             OperateLogContextHolder.unbind();
@@ -224,7 +200,6 @@ public class OperateLogAspect {
         }
     }
 
-    /** {@code recordOn} 过滤：SUCCESS 只记正常返回，ERROR 只记抛异常，先于 SpEL 短路。 */
     private boolean shouldRecord(OperateLogContext context) {
         switch (context.getAnnotation().recordOn()) {
             case SUCCESS:
@@ -236,10 +211,6 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 带缓存的注解查找。{@code findOperateLog} 含多轮反射与接口扫描，而切入点注解运行期不变，
-     * 故按「调用方法 + 目标类」缓存；targetClass 必须入 key——同一接口方法可对应多个实现类。
-     */
     private OperateLog findOperateLogCached(Method invocationMethod,
                                             Method targetMethod,
                                             Class<?> targetClass) {
@@ -253,9 +224,6 @@ public class OperateLogAspect {
         return resolved;
     }
 
-    /**
-     * 注解缓存 key：{@link Method} 按签名比较、{@link Class} 按身份比较，组合后即唯一标识一个切入点。
-     */
     private static final class AnnotationCacheKey {
         private final Method method;
         private final Class<?> targetClass;
@@ -283,9 +251,6 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 注解查找链：目标类 most-specific 方法 → 调用方法 → 目标类实现的接口。
-     */
     private OperateLog findOperateLog(Method invocationMethod,
                                       Method targetMethod,
                                       Class<?> targetClass) {
@@ -306,9 +271,6 @@ public class OperateLogAspect {
         return findInterfaceAnnotation(targetClass, lookupMethod);
     }
 
-    /**
-     * 在目标类的全部接口（含父接口）上找同签名方法的注解，覆盖「只标接口 + JDK 代理」。
-     */
     private OperateLog findInterfaceAnnotation(Class<?> targetClass, Method method) {
         if (targetClass == null || method == null) {
             return null;
@@ -329,10 +291,6 @@ public class OperateLogAspect {
         return null;
     }
 
-    /**
-     * 解析 traceId：优先取宿主 MDC 值，缺失时生成 UUID 并回写 MDC，使同一请求内多个
-     * {@code @OperateLog} 方法（含嵌套）共享同一 traceId。返回值标记是否本组件生成，据此决定收尾是否清理。
-     */
     private TraceId resolveTraceId() {
         String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
         try {
@@ -350,9 +308,6 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 清理本组件写入的 traceId；清理失败只影响本线程 MDC，不牵连业务与日志收尾。
-     */
     private void clearTraceIdQuietly(String mdcKey) {
         try {
             MDC.remove(mdcKey);
@@ -362,9 +317,6 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * traceId 取值结果：值、是否由本组件生成（决定收尾是否清理 MDC）、所用 MDC key。
-     */
     private static final class TraceId {
         private final String value;
         private final boolean generated;
@@ -398,9 +350,6 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 采集请求侧 HTTP 快照；解析失败只让相关字段为 {@code null}。
-     */
     private HttpContext resolveHttpContext() {
         try {
             return this.httpContextResolver.resolve();
@@ -410,9 +359,6 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 组装与落地全程隔离：故障只损失本条日志，原因在 debug 级别暴露。
-     */
     private void handleSafely(OperateLogContext context) {
         try {
             // recordOn 先行短路过滤（无 SpEL 求值成本），再进 condition 交集判定
@@ -508,10 +454,6 @@ public class OperateLogAspect {
         return value == null ? null : String.valueOf(value);
     }
 
-    /**
-     * 打印堆栈到限长缓冲：深递归异常堆栈可达数十万行，先构造完整串再截断会先撑起远超上限的内存副本。
-     * 上限（含 {@code <=0 不截断}）由 {@link LimitedStringWriter} 处理，此处直接透传。
-     */
     private String getStackTrace(Throwable throwable) {
         StringWriter writer = new LimitedStringWriter(this.payloadPolicy.getMaxErrorLength());
         PrintWriter printWriter = new PrintWriter(writer);
@@ -537,11 +479,6 @@ public class OperateLogAspect {
         return result.isEmpty() ? null : result;
     }
 
-    /**
-     * extra 单值降级：只保证「Jackson 能写出」。extra 由开发者主动写入，本组件不脱敏
-     * （见 README「不要往 extra 塞敏感数据」）；但一个循环引用 / getter 抛错的坏值会让整条记录
-     * 在 handler 侧序列化失败被丢，故逐值探测：标量直返，非标量写不出就换占位符，其余字段照常落地。
-     */
     private Object toSerializableValue(Object value) {
         if (value == null || value instanceof String || value instanceof Number
                 || value instanceof Boolean || value instanceof Character) {
@@ -554,10 +491,6 @@ public class OperateLogAspect {
         return "<UNSERIALIZABLE:" + value.getClass().getSimpleName() + ">";
     }
 
-    /**
-     * 逐值收缩最长的值直至整体 JSON 不超上限，一次至少缩 1 字符保证收敛。
-     * 相比整表一次截断，逐值收缩能保留排在下方的键（如占位符），不丢诊断线索。
-     */
     private void enforceExtraLimit(Map<String, Object> extra, int limit) {
         String serialized = this.serializer.serialize(extra);
         while (serialized != null && serialized.length() > limit && !extra.isEmpty()) {
@@ -586,9 +519,6 @@ public class OperateLogAspect {
         }
     }
 
-    /**
-     * 写入超过上限后丢弃后续内容（含换行），使内存占用与最终落地长度同阶。
-     */
     private static final class LimitedStringWriter extends StringWriter {
         private final int limit;
 

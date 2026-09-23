@@ -21,7 +21,6 @@ public class OperateLogJakartaClientIpResolver implements ClientIpResolver {
     private static final String REAL_IP = "X-Real-IP";
     /** 代理头长度上限：超长头几乎必为伪造 / 溢出攻击载荷，直接判为不可信。 */
     private static final int MAX_HEADER_LENGTH = 256;
-    /** 是否信任反向代理头；代理不可信时开启会被客户端伪造 IP。 */
     private final boolean trustProxy;
 
     public OperateLogJakartaClientIpResolver(boolean trustProxy) {
@@ -115,7 +114,6 @@ public class OperateLogJakartaClientIpResolver implements ClientIpResolver {
         return true;
     }
 
-    /** 当前线程绑定的 jakarta request；非 Web 场景或非本栈宿主返回 {@code null}。 */
     private HttpServletRequest currentRequest() {
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         if (attributes == null) {

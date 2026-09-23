@@ -22,7 +22,6 @@ public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
     private static final String REAL_IP = "X-Real-IP";
     /** 代理头长度上限：超长头几乎必为伪造 / 溢出攻击载荷，直接判为不可信。 */
     private static final int MAX_HEADER_LENGTH = 256;
-    /** 是否信任反向代理头；代理不可信时开启会被客户端伪造 IP。 */
     private final boolean trustProxy;
 
     public OperateLogJavaxClientIpResolver(boolean trustProxy) {

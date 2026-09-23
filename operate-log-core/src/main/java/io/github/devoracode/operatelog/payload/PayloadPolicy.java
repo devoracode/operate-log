@@ -20,18 +20,12 @@ import java.util.Set;
  */
 public class PayloadPolicy {
     private static final String TRUNCATED_SUFFIX = "...[truncated]";
-    /** 参数类型解析缓存上限：单应用类型数天然有界，定容 LRU 防热部署旧 Class 滞留。 */
     private static final int IGNORED_TYPE_CACHE_SIZE = 512;
     private final int maxRequestLength;
     private final int maxResponseLength;
-    /** errorStack 与 errorMessage 共用同一上限。 */
     private final int maxErrorLength;
     private final int maxExtraLength;
     private final Set<String> ignoredTypes;
-    /**
-     * 参数类型 → 命中忽略项的缓存（{@link Optional#empty()} 表示无命中）：
-     * 未命中也要扫描父类链与接口，缓存后降为一次 Map 查询。
-     */
     private final Map<Class<?>, Optional<String>> ignoredTypeCache = Collections.synchronizedMap(new LinkedHashMap<Class<?>, Optional<String>>(
             16,
             0.75f,
@@ -83,51 +77,22 @@ public class PayloadPolicy {
         return filtered;
     }
 
-    /**
-     * 截断 requestBody（requestHeaders / requestQuery / userAgent 复用本上限）。
-     *
-     * @param value 序列化后的请求体文本
-     * @return 截断后的文本，未超长时原样返回
-     */
     public String truncateRequest(String value) {
         return truncate(value, this.maxRequestLength);
     }
 
-    /**
-     * 截断 responseBody。
-     *
-     * @param value 序列化后的返回值文本
-     * @return 截断后的文本，未超长时原样返回
-     */
     public String truncateResponse(String value) {
         return truncate(value, this.maxResponseLength);
     }
 
-    /**
-     * 截断 errorStack。
-     *
-     * @param value 完整异常堆栈文本
-     * @return 截断后的文本，未超长时原样返回
-     */
     public String truncateErrorStack(String value) {
         return truncate(value, this.maxErrorLength);
     }
 
-    /**
-     * 截断 errorMessage，与 errorStack 共用上限。
-     *
-     * @param value 异常 message 文本
-     * @return 截断后的文本，未超长时原样返回
-     */
     public String truncateErrorMessage(String value) {
         return truncate(value, this.maxErrorLength);
     }
 
-    /**
-     * errorStack 上限；供堆栈打印侧按上限限长写入，避免先撑起完整字符串。
-     *
-     * @return errorStack 与 errorMessage 共用的长度上限，小于等于 0 表示不截断
-     */
     public int getMaxErrorLength() {
         return this.maxErrorLength;
     }
@@ -160,10 +125,8 @@ public class PayloadPolicy {
         return value.substring(0, safeCutIndex(value, maxLength - suffixLength)) + TRUNCATED_SUFFIX;
     }
 
-    /**
-     * 截断点落在代理对中间时回退一位：按 UTF-16 code unit 截断可能切裂 high/low surrogate，
-     * 产生孤立 surrogate，下游按 UTF-8 编码时替换为 U+FFFD（乱码）甚至抛异常。
-     */
+    // 截断点若落在代理对中间（前一个 code unit 是 high surrogate）回退一位，
+    // 否则孤立 surrogate 经 UTF-8 编码会成 U+FFFD 乱码甚至抛异常
     private static int safeCutIndex(String value, int cutIndex) {
         if (cutIndex <= 0) {
             return 0;
@@ -174,11 +137,6 @@ public class PayloadPolicy {
         return cutIndex;
     }
 
-    /**
-     * 查找参数类型在忽略列表中的命中项（类自身 → 父类链 → 全部接口含父接口），
-     * 返回命中的配置类型名，未命中返回 {@code null}。结果按类型缓存（含未命中哨兵），
-     * 同一参数类型的扫描只做一次。
-     */
     private String findIgnoredType(Class<?> type) {
         Optional<String> cached = this.ignoredTypeCache.get(type);
         if (cached != null) {
@@ -202,9 +160,6 @@ public class PayloadPolicy {
         return null;
     }
 
-    /**
-     * 递归当前类声明的接口及其父接口，返回命中的接口全限定名，未命中返回 {@code null}。
-     */
     private String findIgnoredInterface(Class<?> type) {
         Class<?>[] interfaces = type.getInterfaces();
         for (Class<?> interfaceClass : interfaces) {

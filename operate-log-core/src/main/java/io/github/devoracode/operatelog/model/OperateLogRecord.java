@@ -45,9 +45,5 @@ public class OperateLogRecord {
     private String errorType;
     private String errorMessage;
     private String errorStack;
-    /**
-     * 业务自定义字段，经 {@code OperateLogContextHolder#putExtra} 写入；
-     * 未写入时为 {@code null}。
-     */
     private Map<String, Object> extra;
 }

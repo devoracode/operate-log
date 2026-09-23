@@ -23,7 +23,6 @@
              安装/部署的 pom 由 flatten-maven-plugin 展开成具体版本。 -->
         <revision>1.0.0-SNAPSHOT</revision>
 
-        <java.version>8</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <spring.boot2.version>2.7.18</spring.boot2.version>

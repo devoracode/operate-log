@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 具体脱敏器应覆写以提供 query 参数级掩码。</p>
  */
 public interface SensitiveDataMasker {
+    /** 接口默认方法（如 {@link #maskQuery(String)}）输出警告所用日志器。 */
     Logger LOGGER = LoggerFactory.getLogger(SensitiveDataMasker.class);
     /**
      * 默认 maskQuery 被调用即说明实现类未覆写，只提示一次避免刷屏。
@@ -22,6 +23,9 @@ public interface SensitiveDataMasker {
 
     /**
      * 对 JSON 格式内容进行敏感字段脱敏。
+     *
+     * @param content 序列化后的 JSON 文本，可能为 {@code null} 或空
+     * @return 命中字段已替换的 JSON 文本；{@code content} 为空、未命中或不可解析时原样返回
      */
     String mask(String content);
 
@@ -30,6 +34,9 @@ public interface SensitiveDataMasker {
      * 异常 message 常拼接原始参数（含密码、token），但格式不是 JSON，
      * {@link #mask(String)} 无法处理，需走独立的纯文本掩码路径。
      * 默认实现原样返回；{@link DefaultSensitiveDataMasker} 覆写为按字段名子串匹配替换。
+     *
+     * @param text 待脱敏的纯文本，可能为 {@code null} 或空
+     * @return 脱敏后的文本；未命中敏感字段时原样返回 {@code text}
      */
     default String maskPlainText(String text) {
         return text;

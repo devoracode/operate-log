@@ -76,6 +76,21 @@ public class OperateLogAspect {
     /**
      * 供宿主直接 {@code new} 以自定义切点。参数顺序即二进制签名，
      * <b>新增字段只能追加到末尾、禁止重排</b>——切面是可覆盖的扩展点，改序会让已编译宿主静默错位。
+     *
+     * @param handler             日志落地出口，组装完成的记录交由它写出
+     * @param operatorResolver    业务方法执行前解析当前操作人，失败降级为 {@code null}
+     * @param httpContextResolver 采集请求侧 HTTP 快照（method / url / headers / query 等）
+     * @param serializer          把入参、返回值、请求头等对象转成 JSON 文本
+     * @param sensitiveDataMasker 脱敏器，仅在 {@code maskEnabled} 为 {@code true} 时被调用
+     * @param spelEngine          渲染 {@code description}、求值 {@code businessId} 与 {@code condition}
+     * @param application         写入记录 {@code application} 字段的应用名，用于多应用共库时区分
+     * @param environment         写入记录 {@code environment} 字段的运行环境
+     * @param version             写入记录 {@code version} 字段的应用版本号
+     * @param maskEnabled         脱敏总开关；{@code false} 时跳过 {@code sensitiveDataMasker}，各字段原样落地
+     * @param payloadPolicy       载荷防护策略：参数过滤与各字段的长度截断
+     * @param traceIdMdcKey       读取宿主 traceId 的 MDC key，空白时回落到默认的 {@code traceId}
+     * @param annotationCacheSize 注解查找 LRU 缓存的条目上限（缓存「方法 + 目标类 → {@link OperateLog}」解析结果），
+     *                            小于 64 时按 64 生效
      */
     public OperateLogAspect(OperateLogHandler handler,
                             OperatorResolver operatorResolver,
@@ -114,6 +129,14 @@ public class OperateLogAspect {
         });
     }
 
+    /**
+     * 环绕通知：解析注解 → 绑定线程上下文 → 执行业务 → 静默收尾落地。
+     * 未标注 {@link OperateLog} 或日志侧初始化失败时直接放行，不留痕也不影响业务。
+     *
+     * @param joinPoint 被拦截的业务方法连接点
+     * @return 业务方法的原始返回值
+     * @throws Throwable 业务方法自身抛出的异常，原样透传不包装
+     */
     @Around("@annotation(io.github.devoracode.operatelog.annotation.OperateLog)")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
         final Method invocationMethod;

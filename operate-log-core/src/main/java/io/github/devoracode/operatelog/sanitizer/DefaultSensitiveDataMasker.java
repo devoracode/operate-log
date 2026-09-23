@@ -59,6 +59,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
     private final String queryMaskText;
 
     /**
+     * @param objectMapper    解析与重写 JSON 文本用的 Jackson mapper
      * @param sensitiveFields 在 {@link #DEFAULT_FIELDS} 之外<b>追加</b>的敏感字段名，匹配忽略大小写；
      *                        {@code null} 或空表示只用默认字段
      * @param maskText        命中字段的替换文本；空白时回退 {@code ******}

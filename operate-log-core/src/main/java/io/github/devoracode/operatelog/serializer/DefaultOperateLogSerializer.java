@@ -15,6 +15,9 @@ public class DefaultOperateLogSerializer implements OperateLogSerializer {
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * @param objectMapper 写出 JSON 用的 Jackson mapper，为宿主 mapper 的副本或组件兜底实例
+     */
     public DefaultOperateLogSerializer(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }

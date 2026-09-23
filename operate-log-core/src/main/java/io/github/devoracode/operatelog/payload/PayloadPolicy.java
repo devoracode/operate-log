@@ -43,7 +43,11 @@ public class PayloadPolicy {
     });
 
     /**
+     * @param maxRequestLength requestBody 长度上限，requestHeaders / requestQuery / userAgent 复用
+     * @param maxResponseLength responseBody 长度上限
      * @param maxErrorLength errorStack 与 errorMessage 共用的长度上限
+     * @param maxExtraLength extra 整表序列化后的总长上限，小于等于 0 时不收缩
+     * @param ignoredTypes 忽略类型全限定名集合，空白项忽略，匹配父类链与全部接口
      */
     public PayloadPolicy(int maxRequestLength,
                          int maxResponseLength,
@@ -60,6 +64,9 @@ public class PayloadPolicy {
     /**
      * 命中「忽略类型」的参数替换为 {@code <IGNORED:命中类型短名>}（短名取配置命中的接口/父类，非运行时实现类）。
      * 无命中返回原数组；有命中先克隆再替换，不改调用方入参。
+     *
+     * @param arguments 被拦截方法的实参数组，可为 null 或空
+     * @return 过滤后的实参数组：无命中为原数组，有命中为克隆后替换命中位的新数组
      */
     public Object[] filterArguments(Object[] arguments) {
         if (ArrayUtils.isEmpty(arguments) || this.ignoredTypes.isEmpty()) {
@@ -85,6 +92,9 @@ public class PayloadPolicy {
 
     /**
      * 截断 requestBody（requestHeaders / requestQuery / userAgent 复用本上限）。
+     *
+     * @param value 序列化后的请求体字符串，可为 null
+     * @return 按 maxRequestLength 截断并追加省略标记后的结果，未超长时原样返回
      */
     public String truncateRequest(String value) {
         return truncate(value, this.maxRequestLength);
@@ -92,6 +102,9 @@ public class PayloadPolicy {
 
     /**
      * 截断 responseBody。
+     *
+     * @param value 序列化后的返回值字符串，可为 null
+     * @return 按 maxResponseLength 截断并追加省略标记后的结果，未超长时原样返回
      */
     public String truncateResponse(String value) {
         return truncate(value, this.maxResponseLength);
@@ -99,6 +112,9 @@ public class PayloadPolicy {
 
     /**
      * 截断 errorStack。
+     *
+     * @param value 完整异常堆栈字符串，可为 null
+     * @return 按 maxErrorLength 截断并追加省略标记后的结果，未超长时原样返回
      */
     public String truncateErrorStack(String value) {
         return truncate(value, this.maxErrorLength);
@@ -106,6 +122,9 @@ public class PayloadPolicy {
 
     /**
      * 截断 errorMessage，与 errorStack 共用上限。
+     *
+     * @param value 异常 message 字符串，可为 null
+     * @return 按 maxErrorLength 截断并追加省略标记后的结果，未超长时原样返回
      */
     public String truncateErrorMessage(String value) {
         return truncate(value, this.maxErrorLength);
@@ -113,11 +132,18 @@ public class PayloadPolicy {
 
     /**
      * errorStack 上限；供堆栈打印侧按上限限长写入，避免先撑起完整字符串。
+     *
+     * @return errorStack 与 errorMessage 共用的长度上限，小于等于 0 表示不截断
      */
     public int getMaxErrorLength() {
         return this.maxErrorLength;
     }
 
+    /**
+     * extra 整表序列化后的总长上限，超限时由切面逐值收缩或整体降级。
+     *
+     * @return 总长上限，小于等于 0 表示不收缩
+     */
     public int getMaxExtraLength() {
         return this.maxExtraLength;
     }
@@ -129,6 +155,10 @@ public class PayloadPolicy {
      *
      * <p>边界：{@code null} 原样返回；{@code maxLength <= 0} 不截断；
      * 额度装不下标记时只截不标记。</p>
+     *
+     * @param value 待截断的原始字符串，可为 null
+     * @param maxLength 含截断标记在内的最终长度上限，小于等于 0 表示不截断
+     * @return 长度不超 maxLength 的结果串；无需截断或不可截断时原样返回
      */
     public static String truncate(String value, int maxLength) {
         if (value == null || maxLength <= 0 || value.length() <= maxLength) {

@@ -11,6 +11,11 @@ public class DefaultOperateLogHandler implements OperateLogHandler {
 
     private final ObjectMapper objectMapper;
 
+    /**
+     * 构造默认处理器。
+     *
+     * @param objectMapper 用于把日志记录序列化为单行 JSON 的 ObjectMapper，由容器注入
+     */
     public DefaultOperateLogHandler(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }

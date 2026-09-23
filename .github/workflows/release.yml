@@ -25,18 +25,18 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          VERSION=$(mvn --batch-mode --quiet -DforceStdout help:evaluate -Dexpression=project.version)
-          echo "project version is ${VERSION}"
-          case "${VERSION}" in
+          REV=$(mvn --batch-mode --quiet -DforceStdout help:evaluate -Dexpression=revision)
+          echo "revision is ${REV}"
+          case "${REV}" in
             *-SNAPSHOT)
-              echo "::error::project version is still a SNAPSHOT (${VERSION}); a release must publish a final version."
+              echo "::error::revision is still a SNAPSHOT (${REV}); a release must publish a final version."
               exit 1
               ;;
           esac
           if [ "${EVENT_NAME}" = "release" ]; then
             TAG="${GITHUB_REF_NAME#v}"
-            if [ "${TAG}" != "${VERSION}" ]; then
-              echo "::error::Release tag ${GITHUB_REF_NAME} does not match project version ${VERSION}."
+            if [ "${TAG}" != "${REV}" ]; then
+              echo "::error::Release tag ${GITHUB_REF_NAME} does not match revision ${REV}."
               exit 1
             fi
           fi

@@ -23,12 +23,12 @@ jobs:
           java-version: '8'
           distribution: temurin
           cache: maven
-      - name: Resolve the project version
+      - name: Resolve the revision
         id: version
         run: |
-          VERSION=$(mvn --batch-mode --quiet -DforceStdout help:evaluate -Dexpression=project.version)
-          echo "project version is ${VERSION}"
-          case "${VERSION}" in
+          REV=$(mvn --batch-mode --quiet -DforceStdout help:evaluate -Dexpression=revision)
+          echo "revision is ${REV}"
+          case "${REV}" in
             *-SNAPSHOT) echo "snapshot=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "snapshot=false" >> "$GITHUB_OUTPUT" ;;
           esac

@@ -37,7 +37,6 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -62,8 +61,6 @@ public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
     private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
-    private static final Comparator<ExtraEntry> EXTRA_ENTRY_LENGTH_DESC =
-            (left, right) -> Integer.compare(right.serializedLength, left.serializedLength);
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
     private final HttpContextResolver httpContextResolver;
@@ -482,7 +479,7 @@ public class OperateLogAspect {
 
     private void enforceExtraLimit(Map<String, Object> extra, int limit) {
         PriorityQueue<ExtraEntry> entries = new PriorityQueue<>(
-                Math.max(1, extra.size()), EXTRA_ENTRY_LENGTH_DESC);
+                Math.max(1, extra.size()), (left, right) -> Integer.compare(right.serializedLength, left.serializedLength));
         int serializedLength = 2;
         int entryCount = 0;
         for (Map.Entry<String, Object> entry : extra.entrySet()) {

@@ -241,7 +241,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
 
     private static Pattern buildPlainTextFieldPattern(Set<String> fields) {
         List<String> orderedFields = new ArrayList<>(fields);
-        Collections.sort(orderedFields, (left, right) -> {
+        orderedFields.sort((left, right) -> {
             int byLength = Integer.compare(right.length(), left.length());
             return byLength != 0 ? byLength : left.compareTo(right);
         });

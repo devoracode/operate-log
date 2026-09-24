@@ -297,16 +297,22 @@ public class OperateLogAspect {
 
     private TraceId resolveTraceId() {
         String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
+        boolean mayHaveWritten = false;
         try {
             String existing = MDC.get(mdcKey);
             if (StringUtils.isNotBlank(existing)) {
                 return new TraceId(existing, false, mdcKey);
             }
             String generated = UUID.randomUUID().toString();
+            mayHaveWritten = true;
             MDC.put(mdcKey, generated);
             return new TraceId(generated, true, mdcKey);
         } catch (Throwable ex) {
-            // MDC 不可用时退化为「本条记录内唯一」的 ID，不回写也无需清理
+            // 走到写入分支才清理：此时已确认原值为空，不会误删宿主 MDC。MDC.put 可能写入后才抛，
+            // 降级值不能谎报 generated=false，否则半写的 traceId 会留在复用线程上。
+            if (mayHaveWritten) {
+                clearTraceIdQuietly(mdcKey);
+            }
             LOGGER.warn("operate-log: traceId resolution failed, degraded to generated UUID.", ex);
             return new TraceId(UUID.randomUUID().toString(), false, mdcKey);
         }

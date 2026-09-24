@@ -292,14 +292,14 @@ Filter → DispatcherServlet → Interceptor#preHandle
 
 ## 敏感数据脱敏
 
-- 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段以及 `requestQuery`（URL 查询参数）。JSON 字段采用 **JSON 树递归**（Jackson `JsonNode`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层；query string 按参数名匹配，复用同一份敏感字段集合。
+- 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段、`requestQuery`（URL 查询参数）以及 `errorMessage` / `errorStack`（异常消息与堆栈）。JSON 字段采用 **JSON 树递归**（Jackson `JsonNode`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层；query string 按参数名匹配；异常文本按敏感字段名做单遍子串匹配，三条通道复用同一份敏感字段集合。
 - query 参数名先按 `application/x-www-form-urlencoded` **解码再匹配**，`%74oken=...` / `Pass%77ord=...` 这类编码写法与明文同名同等命中，防止编码绕过；输出仍保留参数名原始写法，只替换值。
 - 一个敏感字段都没命中时返回原文，不做无谓的重写（避免数字与格式漂移）。
 - 字段名匹配**忽略大小写**（`Password` / `PASSWORD` / `password` 均脱敏）。
 - 命中字段的值替换为 `mask-text`（默认 `******`）。
-- 待脱敏内容非 JSON 或脱敏过程异常时**原样返回**，不阻断日志流程。
+- JSON 内容无法解析或脱敏过程异常时**原样返回**，不阻断日志流程。
 - 敏感字段集合通过 `operate-log.mask.fields` **追加**。11 个内置默认字段（`password` / `passwd` / `pwd` / `token` / `accessToken` / `refreshToken` / `authorization` / `cookie` / `set-cookie` / `secret` / `clientSecret`）**始终脱敏，配置无法移除**——避免「只想加一个字段」却把既有脱敏项一起关掉。
-- **作用边界**：脱敏作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段以及 `requestQuery`（URL 查询参数，按参数名复用同一份敏感字段集合掩码）。`requestUrl`（不含 query 的完整 URL）、`errorMessage` / `errorStack`（异常消息与堆栈）**不经过脱敏管道**。异常消息可能内嵌 SQL 与参数值（JDBC / MyBatis 场景），有需要的场景可用自定义 `OperateLogHandler` 做二次清洗。
+- **作用边界**：`requestUrl`（不含 query 的完整 URL）与 `extra` **不经过脱敏管道**。`extra` 只按开发者显式写入的内容采集，不做字段语义猜测或自动脱敏。
 
 ## 扩展点
 
@@ -312,7 +312,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 | `HttpContextResolver` | Starter 内置（`javax` / `jakarta` 自动选择） | 定制 HTTP 上下文采集（如接入非 Servlet 容器） |
 | `ClientIpResolver` | Starter 内置（含 `trust-proxy` 逻辑） | 定制客户端 IP 解析策略 |
 | `OperateLogSerializer` | `DefaultOperateLogSerializer`（宿主 `ObjectMapper`） | 更换序列化器（如 Gson、自定义日期格式） |
-| `SensitiveDataMasker` | `DefaultSensitiveDataMasker`（JSON 树递归替换 + query string 参数名掩码） | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
+| `SensitiveDataMasker` | `DefaultSensitiveDataMasker`（JSON 树递归替换 + query 参数名掩码 + 异常文本字段名掩码） | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
 | `SpelEngine` | `DefaultSpelEngine`（LRU 表达式缓存，支持 `enabled` 直通降级） | 定制表达式引擎（如增加自定义函数） |
 | `PayloadPolicy` | 按 `operate-log.payload.*` 组装 | 定制载荷防护（自定义截断 / 忽略类型逻辑，注册 Bean 即覆盖） |
 
@@ -346,12 +346,29 @@ public OperateLogHandler operateLogHandler(OperateLogJdbcRepository repository) 
 
 ### 示例：手机号部分掩码
 
+自定义实现需保留 `mask`、`maskPlainText` 与 `maskQuery` 三个入口，避免 query 或异常文本脱敏静默失效。
+
 ```java
 @Bean
 public SensitiveDataMasker operateLogSensitiveDataMasker(ObjectMapper objectMapper) {
     Set<String> fields = new HashSet<String>(Arrays.asList("mobile", "phone"));
     SensitiveDataMasker base = new DefaultSensitiveDataMasker(objectMapper, fields, null);
-    return json -> postProcess(base.mask(json)); // 在默认脱敏基础上追加自定义规则
+    return new SensitiveDataMasker() {
+        @Override
+        public String mask(String content) {
+            return postProcess(base.mask(content));
+        }
+
+        @Override
+        public String maskPlainText(String text) {
+            return base.maskPlainText(text);
+        }
+
+        @Override
+        public String maskQuery(String query) {
+            return base.maskQuery(query);
+        }
+    };
 }
 ```
 

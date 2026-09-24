@@ -4,7 +4,8 @@ import io.github.devoracode.operatelog.context.OperateLogContext;
 
 /**
  * SpEL 执行器：表达式求值与 {@code #{...}} 模板渲染。
- * 可用变量（#root / #args / #result / #error 等）见 {@code @OperateLog} 与 README。
+ * 可用变量见 README「SpEL 支持」：方法参数（{@code #参数名}、{@code #p0} 位置别名）与内置变量
+ * （{@code #result}、{@code #error}、{@code #context} 等）。未绑定的变量名求值失败，按降级方向处理。
  */
 public interface SpelEngine {
     /**

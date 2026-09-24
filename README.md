@@ -184,6 +184,7 @@ public void cancel(String orderNo) { ... }
 
 - `description` 使用**模板语法**：`"订单 #{#orderNo} 支付成功"`，仅 `#{...}` 内求值，其余为字面文本。
 - `businessId` / `condition` 为**纯表达式**：`"#orderNo"`、`"#success && #result.count > 0"`。
+- 方法参数名与内置变量或位置别名 `#pN` / `#aN` 同名时**以保留名为准**：撞名参数不写入求值上下文（否则 `#result` 会被参数静默改写，审计字段失真），该参数改用 `#p0` / `#a0` 等位置别名取。
 - 表达式解析结果带定容缓存（默认 1024 条，`ConcurrentHashMap` 读路径无锁），写满容量后不再放入新条目；key 空间由编译期表达式集合天然有界，正常使用不会写满，同一注解方法重复调用无重复解析开销。
 - **表达式失败不中断日志**：语法错误 / 空指针访问等按方向降级——`condition` 视为通过（宁可多记不漏记）、`description` 输出模板原文、`businessId` 记 `null`，原因以 debug 日志暴露。
 - `operate-log.spel.enabled=false` 时引擎整体直通（零求值开销）：condition 恒通过、description 输出原文、businessId 为 `null`。

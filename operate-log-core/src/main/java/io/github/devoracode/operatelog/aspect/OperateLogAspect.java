@@ -451,13 +451,15 @@ public class OperateLogAspect {
         if (source == null || source.isEmpty()) {
             return null;
         }
+        int limit = this.payloadPolicy.getMaxExtraLength();
+        // 限长路径的逐条测量同时承担可用性探测，避免复杂对象先完整序列化再重复测量。
         Map<String, Object> result = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : source.entrySet()) {
             if (entry.getKey() != null) {
-                result.put(String.valueOf(entry.getKey()), toSerializableValue(entry.getValue()));
+                Object value = entry.getValue();
+                result.put(String.valueOf(entry.getKey()), limit > 0 ? value : toSerializableValue(value));
             }
         }
-        int limit = this.payloadPolicy.getMaxExtraLength();
         if (limit > 0) {
             enforceExtraLimit(result, limit);
         }
@@ -465,14 +467,22 @@ public class OperateLogAspect {
     }
 
     private Object toSerializableValue(Object value) {
-        if (value == null || value instanceof String || value instanceof Number
-                || value instanceof Boolean || value instanceof Character) {
+        if (isSimpleExtraValue(value)) {
             return value;
         }
         String probe = this.serializer.serialize(value);
         if (probe != null && !UNSERIALIZABLE_SENTINEL.equals(probe)) {
             return value;
         }
+        return unserializableValue(value);
+    }
+
+    private boolean isSimpleExtraValue(Object value) {
+        return value == null || value instanceof String || value instanceof Number
+                || value instanceof Boolean || value instanceof Character;
+    }
+
+    private Object unserializableValue(Object value) {
         return "<UNSERIALIZABLE:" + value.getClass().getSimpleName() + ">";
     }
 
@@ -484,8 +494,18 @@ public class OperateLogAspect {
         for (Map.Entry<String, Object> entry : extra.entrySet()) {
             ExtraEntry measured = measureExtraEntry(entry.getKey(), entry.getValue());
             if (measured == null) {
-                extra.clear();
-                return;
+                Object value = entry.getValue();
+                if (isSimpleExtraValue(value)) {
+                    extra.clear();
+                    return;
+                }
+                Object placeholder = unserializableValue(value);
+                extra.put(entry.getKey(), placeholder);
+                measured = measureExtraEntry(entry.getKey(), placeholder);
+                if (measured == null) {
+                    extra.clear();
+                    return;
+                }
             }
             entries.offer(measured);
             serializedLength += measured.serializedLength - 2;

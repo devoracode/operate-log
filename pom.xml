@@ -21,7 +21,7 @@
     <properties>
         <!-- 全仓库唯一版本源：子模块的 <parent><version> 写 ${revision}，发版只改这一处。
              安装/部署的 pom 由 flatten-maven-plugin 展开成具体版本。 -->
-        <revision>1.0.0-SNAPSHOT</revision>
+        <revision>1.0.0</revision>
 
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 

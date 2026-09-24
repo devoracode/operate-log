@@ -1,9 +1,12 @@
 package io.github.devoracode.operatelog.test.boot2;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
+import io.github.devoracode.operatelog.serializer.DefaultOperateLogSerializer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -263,6 +266,24 @@ class OperateLogBoot2MockMvcTest {
                 "坏参数应按元素降级: " + requestBody);
         assertTrue(requestBody.contains("\"ok\""), "其余参数不得受坏元素牵连: " + requestBody);
         assertTrue(flag(record, "success"), "坏元素不得影响业务");
+    }
+
+    @Test
+    void nullArgumentIsJsonNullWhenElementSerializationFails() {
+        ObjectMapper objectMapper = new ObjectMapper() {
+            @Override
+            public String writeValueAsString(Object value) throws JsonProcessingException {
+                if (value == null) {
+                    throw new IllegalStateException("null serialization unavailable");
+                }
+                return super.writeValueAsString(value);
+            }
+        };
+
+        String serialized = new DefaultOperateLogSerializer(objectMapper)
+                .serializeArguments(new Object[]{null, new UnserializableHolder()});
+
+        assertEquals("[null,\"<UNSERIALIZABLE:UnserializableHolder>\"]", serialized);
     }
 
     // ==================== 嵌套调用与上下文 ====================

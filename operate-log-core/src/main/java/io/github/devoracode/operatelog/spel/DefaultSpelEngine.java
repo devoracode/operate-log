@@ -48,7 +48,7 @@ public class DefaultSpelEngine implements SpelEngine {
      * 静默改写 {@code #result} 语义比取不到该参数名危险得多，撞名参数仍可用位置别名取到。
      */
     private static final Set<String> RESERVED_VARIABLE_NAMES = Collections.unmodifiableSet(
-            new HashSet<String>(Arrays.asList("context", "annotation", "result", "error", "http",
+            new HashSet<>(Arrays.asList("context", "annotation", "result", "error", "http",
                     "operator", "traceId", "success", "costTime", "startTime", "endTime")));
     private static final Pattern POSITIONAL_VARIABLE_NAME = Pattern.compile("[pa]\\d+");
     private final ExpressionParser parser = new SpelExpressionParser();
@@ -68,8 +68,8 @@ public class DefaultSpelEngine implements SpelEngine {
     public DefaultSpelEngine(int cacheSize, boolean enabled) {
         this.enabled = enabled;
         this.maxCacheSize = Math.max(cacheSize, 64);
-        this.expressionCache = new ConcurrentHashMap<String, Expression>();
-        this.parameterNameCache = new ConcurrentHashMap<Method, String[]>();
+        this.expressionCache = new ConcurrentHashMap<>();
+        this.parameterNameCache = new ConcurrentHashMap<>();
     }
 
     @Override

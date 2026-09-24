@@ -67,7 +67,7 @@ public class OperateLogProperties {
          * {@link io.github.devoracode.operatelog.sanitizer.DefaultSensitiveDataMasker#DEFAULT_FIELDS}
          * 内置 16 项取并集生效：默认字段始终脱敏，配置无法移除。
          */
-        private Set<String> fields = new LinkedHashSet<String>();
+        private Set<String> fields = new LinkedHashSet<>();
     }
 
     @Data
@@ -100,6 +100,6 @@ public class OperateLogProperties {
          * {@code <IGNORED:类型简名>}。内置 17 项始终生效，配置无法移除。
          * 字节数组的 JVM 内部名 {@code [B} 在 YAML 中须加引号写成 {@code - "[B"}，否则解析为流式序列而失败。
          */
-        private List<String> ignoreTypes = new ArrayList<String>();
+        private List<String> ignoreTypes = new ArrayList<>();
     }
 }

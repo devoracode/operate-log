@@ -1,5 +1,6 @@
 package io.github.devoracode.operatelog.payload;
 
+import lombok.Getter;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.ClassUtils;
@@ -45,10 +46,12 @@ public class PayloadPolicy {
     private static final int IGNORED_TYPE_CACHE_SIZE = 512;
     private final int maxRequestLength;
     private final int maxResponseLength;
+    @Getter
     private final int maxErrorLength;
+    @Getter
     private final int maxExtraLength;
     private final Set<String> ignoredTypes;
-    private final Map<Class<?>, Optional<String>> ignoredTypeCache = new ConcurrentHashMap<Class<?>, Optional<String>>();
+    private final Map<Class<?>, Optional<String>> ignoredTypeCache = new ConcurrentHashMap<>();
 
     public PayloadPolicy(int maxRequestLength,
                          int maxResponseLength,
@@ -78,7 +81,7 @@ public class PayloadPolicy {
                                                          int maxErrorLength,
                                                          int maxExtraLength,
                                                          Collection<String> additionalIgnoredTypes) {
-        Set<String> ignoredTypes = new LinkedHashSet<String>(SAFETY_DEFAULT_IGNORED_TYPES);
+        Set<String> ignoredTypes = new LinkedHashSet<>(SAFETY_DEFAULT_IGNORED_TYPES);
         if (additionalIgnoredTypes != null) {
             ignoredTypes.addAll(additionalIgnoredTypes);
         }
@@ -128,14 +131,6 @@ public class PayloadPolicy {
 
     public String truncateErrorMessage(String value) {
         return truncate(value, this.maxErrorLength);
-    }
-
-    public int getMaxErrorLength() {
-        return this.maxErrorLength;
-    }
-
-    public int getMaxExtraLength() {
-        return this.maxExtraLength;
     }
 
     /**
@@ -217,7 +212,7 @@ public class PayloadPolicy {
         if (types == null || types.isEmpty()) {
             return Collections.emptySet();
         }
-        Set<String> normalized = new HashSet<String>();
+        Set<String> normalized = new HashSet<>();
         for (String type : types) {
             if (StringUtils.isNotBlank(type)) {
                 normalized.add(StringUtils.trim(type));

@@ -13,7 +13,7 @@ import java.util.Map;
  * 值直接进序列化，勿放入未脱敏的敏感数据。</p>
  */
 public final class OperateLogContextHolder {
-    private static final ThreadLocal<OperateLogContext> HOLDER = new ThreadLocal<OperateLogContext>();
+    private static final ThreadLocal<OperateLogContext> HOLDER = new ThreadLocal<>();
 
     private OperateLogContextHolder() {
     }

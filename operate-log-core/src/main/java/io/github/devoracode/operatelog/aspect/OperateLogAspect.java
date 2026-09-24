@@ -14,6 +14,9 @@ import io.github.devoracode.operatelog.resolver.OperatorResolver;
 import io.github.devoracode.operatelog.sanitizer.SensitiveDataMasker;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import io.github.devoracode.operatelog.spel.SpelEngine;
+import lombok.AccessLevel;
+import lombok.EqualsAndHashCode;
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -59,12 +62,8 @@ public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
     private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
-    private static final Comparator<ExtraEntry> EXTRA_ENTRY_LENGTH_DESC = new Comparator<ExtraEntry>() {
-        @Override
-        public int compare(ExtraEntry left, ExtraEntry right) {
-            return Integer.compare(right.serializedLength, left.serializedLength);
-        }
-    };
+    private static final Comparator<ExtraEntry> EXTRA_ENTRY_LENGTH_DESC =
+            (left, right) -> Integer.compare(right.serializedLength, left.serializedLength);
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
     private final HttpContextResolver httpContextResolver;
@@ -108,7 +107,7 @@ public class OperateLogAspect {
         this.payloadPolicy = payloadPolicy;
         this.traceIdMdcKey = traceIdMdcKey;
         this.maxAnnotationCacheSize = Math.max(annotationCacheSize, 64);
-        this.annotationCache = new ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>>();
+        this.annotationCache = new ConcurrentHashMap<>();
     }
 
     /**
@@ -228,31 +227,11 @@ public class OperateLogAspect {
         return resolved;
     }
 
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    @EqualsAndHashCode
     private static final class AnnotationCacheKey {
         private final Method method;
         private final Class<?> targetClass;
-
-        private AnnotationCacheKey(Method method, Class<?> targetClass) {
-            this.method = method;
-            this.targetClass = targetClass;
-        }
-
-        @Override
-        public boolean equals(Object other) {
-            if (this == other) {
-                return true;
-            }
-            if (!(other instanceof AnnotationCacheKey)) {
-                return false;
-            }
-            AnnotationCacheKey that = (AnnotationCacheKey) other;
-            return this.method.equals(that.method) && this.targetClass.equals(that.targetClass);
-        }
-
-        @Override
-        public int hashCode() {
-            return 31 * this.method.hashCode() + this.targetClass.hashCode();
-        }
     }
 
     private OperateLog findOperateLog(Method invocationMethod,
@@ -476,7 +455,7 @@ public class OperateLogAspect {
         if (source == null || source.isEmpty()) {
             return null;
         }
-        Map<String, Object> result = new LinkedHashMap<String, Object>();
+        Map<String, Object> result = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : source.entrySet()) {
             if (entry.getKey() != null) {
                 result.put(String.valueOf(entry.getKey()), toSerializableValue(entry.getValue()));
@@ -502,7 +481,7 @@ public class OperateLogAspect {
     }
 
     private void enforceExtraLimit(Map<String, Object> extra, int limit) {
-        PriorityQueue<ExtraEntry> entries = new PriorityQueue<ExtraEntry>(
+        PriorityQueue<ExtraEntry> entries = new PriorityQueue<>(
                 Math.max(1, extra.size()), EXTRA_ENTRY_LENGTH_DESC);
         int serializedLength = 2;
         int entryCount = 0;

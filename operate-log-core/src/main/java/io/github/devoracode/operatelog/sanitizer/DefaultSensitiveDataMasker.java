@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -43,7 +42,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
      * 内置默认敏感字段，<b>始终生效</b>：构造时与传入集合取并集，配置无法移除。
      * 免得「只想追加一个字段」的动作静默关掉既有脱敏项——整体替换默认集的代价远大于无法精简。
      */
-    public static final Set<String> DEFAULT_FIELDS = Collections.unmodifiableSet(new LinkedHashSet<String>(
+    public static final Set<String> DEFAULT_FIELDS = Collections.unmodifiableSet(new LinkedHashSet<>(
             Arrays.asList("password",
                     "passwd",
                     "pwd",
@@ -241,13 +240,10 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
     }
 
     private static Pattern buildPlainTextFieldPattern(Set<String> fields) {
-        List<String> orderedFields = new ArrayList<String>(fields);
-        Collections.sort(orderedFields, new Comparator<String>() {
-            @Override
-            public int compare(String left, String right) {
-                int byLength = Integer.compare(right.length(), left.length());
-                return byLength != 0 ? byLength : left.compareTo(right);
-            }
+        List<String> orderedFields = new ArrayList<>(fields);
+        Collections.sort(orderedFields, (left, right) -> {
+            int byLength = Integer.compare(right.length(), left.length());
+            return byLength != 0 ? byLength : left.compareTo(right);
         });
         StringBuilder expression = new StringBuilder();
         for (String field : orderedFields) {
@@ -295,7 +291,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
      * {@link #DEFAULT_FIELDS} 与追加字段取并集；字段名精确匹配（非子串），大小写不敏感。
      */
     private static Set<String> normalizeFields(Set<String> fields) {
-        Set<String> normalized = new HashSet<String>();
+        Set<String> normalized = new HashSet<>();
         for (String field : DEFAULT_FIELDS) {
             normalized.add(StringUtils.lowerCase(field, Locale.ROOT));
         }

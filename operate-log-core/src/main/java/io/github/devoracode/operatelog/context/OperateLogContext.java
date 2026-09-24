@@ -32,7 +32,7 @@ public class OperateLogContext {
     private long costTime;
     private Instant startTime;
     private Instant endTime;
-    private final Map<String, Object> extra = new LinkedHashMap<String, Object>();
+    private final Map<String, Object> extra = new LinkedHashMap<>();
 
     public boolean hasError() {
         return this.error != null;

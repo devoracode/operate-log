@@ -52,7 +52,7 @@ public class OperateLogJakartaHttpContextResolver implements HttpContextResolver
     }
 
     private Map<String, String> resolveHeaders(HttpServletRequest request) {
-        Map<String, String> headers = new LinkedHashMap<String, String>();
+        Map<String, String> headers = new LinkedHashMap<>();
         Enumeration<String> headerNames = request.getHeaderNames();
         if (headerNames == null) {
             return headers;

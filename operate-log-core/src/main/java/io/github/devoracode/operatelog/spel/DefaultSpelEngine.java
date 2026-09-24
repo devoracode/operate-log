@@ -12,8 +12,13 @@ import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.SimpleEvaluationContext;
 
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 /**
  * 默认 SpEL 执行器：表达式问题只影响字段质量，绝不中断日志链路。
@@ -38,6 +43,14 @@ public class DefaultSpelEngine implements SpelEngine {
      * 解析不到参数名时的哨兵：{@link ConcurrentHashMap} 不允许 null 值。
      */
     private static final String[] NO_PARAMETER_NAMES = new String[0];
+    /**
+     * 保留变量名：内置变量与 {@code #pN} / {@code #aN} 位置别名。参数名撞上时以保留名为准，
+     * 静默改写 {@code #result} 语义比取不到该参数名危险得多，撞名参数仍可用位置别名取到。
+     */
+    private static final Set<String> RESERVED_VARIABLE_NAMES = Collections.unmodifiableSet(
+            new HashSet<String>(Arrays.asList("context", "annotation", "result", "error", "http",
+                    "operator", "traceId", "success", "costTime", "startTime", "endTime")));
+    private static final Pattern POSITIONAL_VARIABLE_NAME = Pattern.compile("[pa]\\d+");
     private final ExpressionParser parser = new SpelExpressionParser();
     private final DefaultParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
     private final Map<String, Expression> expressionCache;
@@ -166,11 +179,16 @@ public class DefaultSpelEngine implements SpelEngine {
         String[] parameterNames = resolveParameterNames(context.getMethod());
         for (int i = 0; i < parameterNames.length && i < arguments.length; i++) {
             String parameterName = parameterNames[i];
-            if (StringUtils.isNotBlank(parameterName)) {
+            if (StringUtils.isNotBlank(parameterName) && !isReservedVariableName(parameterName)) {
                 evaluationContext.setVariable(parameterName, arguments[i]);
             }
         }
         return evaluationContext;
+    }
+
+    private static boolean isReservedVariableName(String variableName) {
+        return RESERVED_VARIABLE_NAMES.contains(variableName)
+                || POSITIONAL_VARIABLE_NAME.matcher(variableName).matches();
     }
 
     /**

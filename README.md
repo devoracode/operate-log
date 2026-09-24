@@ -185,9 +185,8 @@ public void cancel(String orderNo) { ... }
 - `description` 使用**模板语法**：`"订单 #{#orderNo} 支付成功"`，仅 `#{...}` 内求值，其余为字面文本。
 - `businessId` / `condition` 为**纯表达式**：`"#orderNo"`、`"#success && #result.count > 0"`。
 - 方法参数名与内置变量或位置别名 `#pN` / `#aN` 同名时**以保留名为准**：撞名参数不写入求值上下文（否则 `#result` 会被参数静默改写，审计字段失真），该参数改用 `#p0` / `#a0` 等位置别名取。
-- 表达式解析结果带定容缓存（默认 1024 条，`ConcurrentHashMap` 读路径无锁），写满容量后不再放入新条目；key 空间由编译期表达式集合天然有界，正常使用不会写满，同一注解方法重复调用无重复解析开销。
 - **表达式失败不中断日志**：语法错误 / 空指针访问等按方向降级——`condition` 视为通过（宁可多记不漏记）、`description` 输出模板原文、`businessId` 记 `null`，原因以 debug 日志暴露。
-- `operate-log.spel.enabled=false` 时引擎整体直通（零求值开销）：condition 恒通过、description 输出原文、businessId 为 `null`。
+- 需要整体关闭 SpEL 求值（零求值开销）时，注册自定义 `SpelEngine` bean 返回 `new DefaultSpelEngine(false)`：condition 恒通过、description 输出原文、businessId 为 `null`。
 - **安全沙箱**：SpEL 表达式仅允许来自**编译期注解常量**（即 `@OperateLog` 的 `description` / `businessId` / `condition` 属性值），**禁止运行时动态注入表达式**（如从数据库、配置文件或外部接口读取表达式文本）。引擎使用受限的 `SimpleEvaluationContext` 沙箱，仅支持变量读取、属性访问与实例方法调用，**不支持**类型引用（`T(...)`）、构造函数、bean 引用与静态方法调用——即使表达式文本被动态注入，也无法执行任意代码，从源头杜绝远程代码执行（RCE）风险。
 
 ## 配置参考（`application.yml`）
@@ -213,9 +212,6 @@ operate-log:
     fields:
       - mobile
       - idCard
-  spel:
-    enabled: true                 # SpEL 总开关；false 时引擎直通（见「SpEL 支持」）
-    cache-size: 1024              # SpEL 表达式缓存容量（最小 64，写满后不再放入新条目）
   payload:                        # 载荷防护
     max-request-length: 0         # requestBody / requestHeaders / requestQuery / userAgent 最大字符数，<=0 不截断
     max-response-length: 0        # responseBody 最大字符数，<=0 不截断
@@ -238,8 +234,6 @@ operate-log:
 | `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段、`requestQuery`（按参数名匹配）、`errorMessage` / `errorStack`（纯文本子串匹配）。**不作用于 `extra`**——见字段表说明 |
 | `operate-log.mask.mask-text` | `******` | 替换文本 |
 | `operate-log.mask.fields` | 空 | 在 16 个内置默认字段之外**追加**的脱敏字段名（匹配忽略大小写）。默认字段始终生效，无法通过配置移除 |
-| `operate-log.spel.enabled` | `true` | SpEL 开关。`false` 时引擎直通：condition 恒通过、description 输出模板原文、businessId 记 `null`，零求值开销 |
-| `operate-log.spel.cache-size` | `1024` | 表达式缓存容量（实际生效最小值 64，写满后不再放入新条目） |
 | `operate-log.payload.max-request-length` | `0` | `requestBody` / `requestHeaders` / `requestQuery` / `userAgent` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
 | `operate-log.payload.max-response-length` | `0` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
 | `operate-log.payload.max-error-length` | `0` | `errorStack` / `errorMessage` 最大字符数，`<=0` 不截断 |
@@ -314,7 +308,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 | `ClientIpResolver` | Starter 内置（含 `trust-proxy` 逻辑） | 定制客户端 IP 解析策略 |
 | `OperateLogSerializer` | `DefaultOperateLogSerializer`（宿主 `ObjectMapper`） | 更换序列化器（如 Gson、自定义日期格式） |
 | `SensitiveDataMasker` | `DefaultSensitiveDataMasker`（JSON 树递归替换 + query 参数名掩码 + 异常文本字段名掩码） | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
-| `SpelEngine` | `DefaultSpelEngine`（定容表达式缓存，读路径无锁，支持 `enabled` 直通降级） | 定制表达式引擎（如增加自定义函数） |
+| `SpelEngine` | `DefaultSpelEngine`（每次调用重新解析表达式；`new DefaultSpelEngine(false)` 可整体直通） | 定制表达式引擎（如增加自定义函数） |
 | `PayloadPolicy` | 按 `operate-log.payload.*` 组装 | 定制载荷防护（自定义截断 / 忽略类型逻辑，注册 Bean 即覆盖） |
 
 ### 示例：业务自定义字段（extra）
@@ -489,9 +483,8 @@ OperateLogAspect @Around 拦截
   （如以 `TaskDecorator` 包装任务，或在异步方法内重新 `putExtra`）。
 
 > 已实现（原计划项）：载荷长度截断（`operate-log.payload.*`）、序列化忽略类型与逐元素降级、
-> `operate-log.spel.enabled` 生效（引擎直通降级）、表达式缓存定容化、`extra` 自定义字段通道、
-> traceId MDC key 可配置（`trace-id-mdc-key`）、`recordOn` 记录时机过滤、
-> `OperateType` 扩展（GRANT / REVOKE / DOWNLOAD / PRINT）。
+> `extra` 自定义字段通道、traceId MDC key 可配置（`trace-id-mdc-key`）、
+> `recordOn` 记录时机过滤、`OperateType` 扩展（GRANT / REVOKE / DOWNLOAD / PRINT）。
 
 ## License
 

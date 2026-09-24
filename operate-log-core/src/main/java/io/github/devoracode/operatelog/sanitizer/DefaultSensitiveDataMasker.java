@@ -54,7 +54,12 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
                     "cookie",
                     "set-cookie",
                     "secret",
-                    "clientSecret")));
+                    "clientSecret",
+                    "apiKey",
+                    "privateKey",
+                    "accessKey",
+                    "secretKey",
+                    "creditCard")));
     private final ObjectMapper objectMapper;
     private final Set<String> sensitiveFields;
     private final Pattern plainTextFieldPattern;

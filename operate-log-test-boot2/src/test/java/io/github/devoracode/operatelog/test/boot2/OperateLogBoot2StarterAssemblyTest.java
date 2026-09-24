@@ -17,10 +17,15 @@ import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.util.StreamUtils;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Target;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -115,6 +120,31 @@ class OperateLogBoot2StarterAssemblyTest {
                 });
     }
 
+    @Test
+    void configuredIgnoreTypesAreAppendedToBuiltInDefaults() {
+        this.runner.withPropertyValues("operate-log.payload.ignore-types[0]=java.lang.Runnable")
+                .run((context) -> {
+                    PayloadPolicy policy = context.getBean(PayloadPolicy.class);
+                    Object[] filtered = policy.filterArguments(new Object[]{
+                            new ByteArrayInputStream(new byte[0]),
+                            (Runnable) () -> { }
+                    });
+
+                    assertEquals("<IGNORED:InputStream>", filtered[0]);
+                    assertEquals("<IGNORED:Runnable>", filtered[1]);
+                });
+    }
+
+    @Test
+    void effectiveIgnoreTypesHelpersAreNotExposedAsConfigurationProperties() throws IOException {
+        String metadata = StreamUtils.copyToString(
+                new ClassPathResource("META-INF/spring-configuration-metadata.json").getInputStream(),
+                StandardCharsets.UTF_8);
+
+        assertFalse(metadata.contains("operate-log.payload.effective-ignore-types"), metadata);
+        assertFalse(metadata.contains("operate-log.payload.d-e-f-a-u-l-t-i-g-n-o-r-e-t-y-p-e-s"), metadata);
+    }
+
     /** 注解只允许方法级：类级标注会连带拦截整类方法，此断言防止 {@code @Target} 被顺手放宽。 */
     @Test
     void operateLogAnnotationTargetsMethodsOnly() {
@@ -147,12 +177,23 @@ class OperateLogBoot2StarterAssemblyTest {
                     assertFalse(masker.maskQuery("mobile=13800000000&page=1").contains("13800000000"));
 
                     // 内置默认字段不被配置顶掉——本用例的核心断言
-                    String builtIn = masker.mask("{\"password\":\"p\",\"authorization\":\"Bearer t\",\"cookie\":\"c\"}");
+                    String builtIn = masker.mask("{\"password\":\"p\",\"authorization\":\"Bearer t\","
+                            + "\"cookie\":\"c\",\"apiKey\":\"api-secret\",\"privateKey\":\"private-secret\","
+                            + "\"accessKey\":\"access-secret\",\"secretKey\":\"secret-key-value\","
+                            + "\"creditCard\":\"4111111111111111\"}");
                     assertFalse(builtIn.contains("\"p\""), builtIn);
                     assertFalse(builtIn.contains("Bearer t"), builtIn);
                     assertFalse(builtIn.contains("\"c\""), builtIn);
+                    assertFalse(builtIn.contains("api-secret"), builtIn);
+                    assertFalse(builtIn.contains("private-secret"), builtIn);
+                    assertFalse(builtIn.contains("access-secret"), builtIn);
+                    assertFalse(builtIn.contains("secret-key-value"), builtIn);
+                    assertFalse(builtIn.contains("4111111111111111"), builtIn);
                     assertTrue(builtIn.contains("******"), builtIn);
                     assertFalse(masker.maskQuery("token=abc&page=1").contains("abc"));
+                    assertFalse(masker.maskQuery("apiKey=api-secret").contains("api-secret"));
+                    assertFalse(masker.maskPlainText("creditCard=4111111111111111")
+                            .contains("4111111111111111"));
 
                     // 未配置任何字段时默认集同样生效
                     assertFalse(masker.mask("{\"password\":\"p\"}").contains("\"p\""));

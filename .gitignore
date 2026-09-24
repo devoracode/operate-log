@@ -23,10 +23,10 @@
 hs_err_pid*
 replay_pid*
 
-.idea
 target
-.vscode
-
-.flattened-pom.xml
+.*/
+.*
+!.gitignore
+!.github
 docs/
 AGENTS.md

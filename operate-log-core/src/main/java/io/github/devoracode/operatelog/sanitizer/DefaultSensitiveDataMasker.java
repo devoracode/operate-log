@@ -12,14 +12,19 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 默认脱敏器：将 JSON 文本解析为 Jackson {@link JsonNode} 动态树，
@@ -52,6 +57,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
                     "clientSecret")));
     private final ObjectMapper objectMapper;
     private final Set<String> sensitiveFields;
+    private final Pattern plainTextFieldPattern;
     private final String maskText;
     private final String queryMaskText;
 
@@ -60,6 +66,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
                                       String maskText) {
         this.objectMapper = objectMapper;
         this.sensitiveFields = normalizeFields(sensitiveFields);
+        this.plainTextFieldPattern = buildPlainTextFieldPattern(this.sensitiveFields);
         this.maskText = StringUtils.defaultIfEmpty(maskText, DEFAULT_MASK_TEXT);
         this.queryMaskText = urlEncode(this.maskText);
     }
@@ -181,7 +188,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
     }
 
     /**
-     * 纯文本脱敏：按敏感字段名做大小写不敏感的子串搜索，命中后将其后的连续非空白值替换为 maskText。
+     * 纯文本脱敏：按敏感字段名做大小写不敏感的子串搜索，命中后将其后连续的非空白值替换为 maskText。
      * 匹配模式覆盖常见异常 message 格式：{@code password=abc123}、{@code token: xyz}、{@code "secret":"val"}。
      */
     @Override
@@ -189,33 +196,37 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
         if (StringUtils.isBlank(text) || this.sensitiveFields.isEmpty()) {
             return text;
         }
-        String lower = StringUtils.lowerCase(text, Locale.ROOT);
         StringBuilder result = null;
         int lastEnd = 0;
-        for (String field : this.sensitiveFields) {
-            int idx = lower.indexOf(field, lastEnd);
-            while (idx >= 0) {
-                if (result == null) {
-                    result = new StringBuilder(text.length() + 16);
-                }
-                result.append(text, lastEnd, idx + field.length());
-                int valueStart = idx + field.length();
-                // 跳过 key 与 value 之间的分隔符（= : 空格 引号）
-                while (valueStart < text.length() && isSeparator(text.charAt(valueStart))) {
-                    result.append(text.charAt(valueStart));
-                    valueStart++;
-                }
-                // 替换 value 部分（直到下一个空白或分隔符）
-                int valueEnd = valueStart;
-                while (valueEnd < text.length() && !isValueTerminator(text.charAt(valueEnd))) {
-                    valueEnd++;
-                }
-                if (valueEnd > valueStart) {
-                    result.append(this.maskText);
-                }
-                lastEnd = valueEnd;
-                idx = lower.indexOf(field, Math.max(lastEnd, idx + field.length()));
+        Matcher matcher = this.plainTextFieldPattern.matcher(text);
+        while (matcher.find(lastEnd)) {
+            if (result == null) {
+                result = new StringBuilder(text.length() + 16);
             }
+            int valueStart = matcher.end();
+            char quote = 0;
+            boolean hasSeparator = false;
+            while (valueStart < text.length()) {
+                char separator = text.charAt(valueStart);
+                if (!hasSeparator && isQuote(separator)) {
+                    valueStart++;
+                } else if (separator == '=' || separator == ':' || Character.isWhitespace(separator)) {
+                    hasSeparator = true;
+                    valueStart++;
+                } else {
+                    if (hasSeparator && isQuote(separator)) {
+                        quote = separator;
+                        valueStart++;
+                    }
+                    break;
+                }
+            }
+            int valueEnd = findValueEnd(text, valueStart, quote);
+            result.append(text, lastEnd, valueStart);
+            if (valueEnd > valueStart) {
+                result.append(this.maskText);
+            }
+            lastEnd = Math.max(valueEnd, matcher.end());
         }
         if (result == null) {
             return text;
@@ -224,12 +235,55 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
         return result.toString();
     }
 
-    private static boolean isSeparator(char c) {
-        return c == '=' || c == ':' || c == ' ' || c == '"' || c == '\'';
+    private static Pattern buildPlainTextFieldPattern(Set<String> fields) {
+        List<String> orderedFields = new ArrayList<String>(fields);
+        Collections.sort(orderedFields, new Comparator<String>() {
+            @Override
+            public int compare(String left, String right) {
+                int byLength = Integer.compare(right.length(), left.length());
+                return byLength != 0 ? byLength : left.compareTo(right);
+            }
+        });
+        StringBuilder expression = new StringBuilder();
+        for (String field : orderedFields) {
+            if (expression.length() > 0) {
+                expression.append('|');
+            }
+            expression.append(Pattern.quote(field));
+        }
+        return Pattern.compile(expression.toString(), Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    }
+
+    private int findValueEnd(String text, int valueStart, char quote) {
+        if (quote != 0) {
+            for (int i = valueStart; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == '\\') {
+                    i++;
+                } else if (c == quote && (i + 1 == text.length() || isValueTerminator(text.charAt(i + 1)))) {
+                    Matcher fieldMatcher = this.plainTextFieldPattern.matcher(text);
+                    fieldMatcher.region(valueStart, i);
+                    if (!fieldMatcher.find()) {
+                        return i;
+                    }
+                }
+            }
+            return text.length();
+        }
+        int valueEnd = valueStart;
+        while (valueEnd < text.length() && !isValueTerminator(text.charAt(valueEnd))) {
+            valueEnd++;
+        }
+        return valueEnd;
+    }
+
+    private static boolean isQuote(char c) {
+        return c == '"' || c == '\'';
     }
 
     private static boolean isValueTerminator(char c) {
-        return c == ',' || c == ';' || c == '&' || c == '\n' || c == '\r' || c == '}' || c == ']' || c == ')';
+        return Character.isWhitespace(c)
+                || c == ',' || c == ';' || c == '&' || c == '}' || c == ']' || c == ')';
     }
 
     /**

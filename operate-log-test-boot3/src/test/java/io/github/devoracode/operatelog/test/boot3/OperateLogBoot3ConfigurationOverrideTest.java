@@ -76,11 +76,11 @@ class OperateLogBoot3ConfigurationOverrideTest {
     @Test
     void headersCapturedAndProxyHeadersHonored() throws Exception {
         this.mockMvc.perform(get("/demo/5")
-                .header("X-Forwarded-For", "203.0.113.7, 10.0.0.1")
+                .header("X-Forwarded-For", "8.8.8.8, 203.0.113.7")
                 .header("User-Agent", "override-it/1.0"));
 
         Map<String, Object> record = lastRecord();
-        // trust-proxy=true：取 X-Forwarded-For 链第一个（最原始客户端）
+        // trust-proxy=true：取可信代理追加的 X-Forwarded-For 链尾
         assertEquals("203.0.113.7", text(record, "clientIp"));
         // capture-headers=true：请求头以 JSON 入日志（本身也走脱敏管道，此处 mask.enabled=false）
         String headers = text(record, "requestHeaders");

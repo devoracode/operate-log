@@ -159,6 +159,68 @@ class OperateLogBoot3StarterAssemblyTest {
                 });
     }
 
+    @Test
+    void plainTextMasksEverySensitiveFieldInEitherTextOrder() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("token=****** password=******",
+                    masker.maskPlainText("token=AAA password=BBB"));
+            assertEquals("password=****** token=******",
+                    masker.maskPlainText("password=BBB token=AAA"));
+        });
+    }
+
+    @Test
+    void plainTextTreatsWhitespaceAsKeyValueSeparator() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("token=\t****** password=******",
+                    masker.maskPlainText("token=\tAAA password=BBB"));
+        });
+    }
+
+    @Test
+    void plainTextMasksCompleteQuotedValueContainingWhitespace() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("password=\"******\"",
+                    masker.maskPlainText("password=\"BBB CCC\""));
+        });
+    }
+
+    @Test
+    void plainTextDoesNotTreatEscapedQuoteAsClosingDelimiter() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("password=\"******\"",
+                    masker.maskPlainText("password=\"BBB\\\" CCC\""));
+        });
+    }
+
+    @Test
+    void plainTextFailsClosedForUnclosedQuotedValueBeforeAnotherField() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("password=\"******",
+                    masker.maskPlainText("password=\"BBB token=\"CCC\""));
+        });
+    }
+
+    @Test
+    void plainTextDoesNotAcceptNextFieldQuoteAsUnclosedValueDelimiter() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("password=\"******",
+                    masker.maskPlainText("password=\"BBB token=\" LEAKME\""));
+        });
+    }
+
     /**
      * 参数名 URL 编码后仍须命中同一份敏感字段集合，否则 {@code %74oken=abc}
      * 这类写法会绕过 query 脱敏（P1-3）。

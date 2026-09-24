@@ -115,6 +115,7 @@ public class OperateLogJakartaClientIpResolver implements ClientIpResolver {
         return true;
     }
 
+    /** 当前线程绑定的 jakarta request；非 Web 场景或非本栈宿主返回 {@code null}。 */
     private HttpServletRequest currentRequest() {
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         if (attributes == null) {

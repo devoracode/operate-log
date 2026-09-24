@@ -165,11 +165,12 @@ public class PayloadPolicy {
     }
 
     private String resolveIgnoredType(Class<?> type) {
+        Set<Class<?>> visited = new HashSet<>();
         for (Class<?> current = type; current != null; current = current.getSuperclass()) {
             if (this.ignoredTypes.contains(current.getName())) {
                 return current.getName();
             }
-            String matched = findIgnoredInterface(current);
+            String matched = findIgnoredInterface(current, visited);
             if (matched != null) {
                 return matched;
             }
@@ -177,13 +178,16 @@ public class PayloadPolicy {
         return null;
     }
 
-    private String findIgnoredInterface(Class<?> type) {
+    private String findIgnoredInterface(Class<?> type, Set<Class<?>> visited) {
         Class<?>[] interfaces = type.getInterfaces();
         for (Class<?> interfaceClass : interfaces) {
+            if (!visited.add(interfaceClass)) {
+                continue;
+            }
             if (this.ignoredTypes.contains(interfaceClass.getName())) {
                 return interfaceClass.getName();
             }
-            String matched = findIgnoredInterface(interfaceClass);
+            String matched = findIgnoredInterface(interfaceClass, visited);
             if (matched != null) {
                 return matched;
             }

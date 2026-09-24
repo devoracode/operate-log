@@ -206,9 +206,9 @@ operate-log:
   mask:
     enabled: true                 # 是否启用敏感数据脱敏
     mask-text: "******"          # 脱敏替换文本
-    # fields 为【追加】语义（匹配忽略大小写）：内置 11 项默认字段始终脱敏，配置只往里加。
-    # 默认字段：password / passwd / pwd / token / accessToken / refreshToken /
-    #          authorization / cookie / set-cookie / secret / clientSecret
+    # fields 为【追加】语义（匹配忽略大小写）：内置 16 项默认字段始终脱敏，配置只往里加。
+    # 默认字段：password / passwd / pwd / token / accessToken / refreshToken / authorization /
+    #          cookie / set-cookie / secret / clientSecret / apiKey / privateKey / accessKey / secretKey / creditCard
     fields:
       - mobile
       - idCard
@@ -220,11 +220,9 @@ operate-log:
     max-response-length: 0        # responseBody 最大字符数，<=0 不截断
     max-error-length: 0           # errorStack / errorMessage 最大字符数，<=0 不截断
     max-extra-length: 0           # extra 整体序列化后最大字符数，<=0 不截断（超限时逐值收缩到限额内）
-    # ignore-types:               # 序列化时跳过的参数类型（全限定类名，命中父类/接口即算）
-    #   - org.springframework.web.multipart.MultipartFile
-    #   - java.io.InputStream
-    #   - "[B"                    # 字节数组的 JVM 内部名，YAML 中必须加引号
-    # 注意：配置该项会【整体替换】内置默认列表（默认已含 Servlet 请求/响应/会话、安全上下文、流、字节数组等 17 项）
+    # ignore-types:               # 在内置 17 项安全基线之外追加的忽略类型
+    #   - java.util.concurrent.Callable
+    # 注意：配置项会在内置 17 项安全基线之外【追加】，不会移除 Servlet、安全上下文、流、字节数组等默认防护。
 ```
 
 | 配置项 | 默认值 | 说明 |
@@ -238,14 +236,16 @@ operate-log:
 | `operate-log.http.capture-headers` | `false` | 开启后采集全部请求头写入 `requestHeaders`（JSON 对象）。注意头部可能含 Cookie 等敏感信息，开启后脱敏器会一并处理 |
 | `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段、`requestQuery`（按参数名匹配）、`errorMessage` / `errorStack`（纯文本子串匹配）。**不作用于 `extra`**——见字段表说明 |
 | `operate-log.mask.mask-text` | `******` | 替换文本 |
-| `operate-log.mask.fields` | 空 | 在 11 个内置默认字段之外**追加**的脱敏字段名（匹配忽略大小写）。默认字段始终生效，无法通过配置移除 |
+| `operate-log.mask.fields` | 空 | 在 16 个内置默认字段之外**追加**的脱敏字段名（匹配忽略大小写）。默认字段始终生效，无法通过配置移除 |
 | `operate-log.spel.enabled` | `true` | SpEL 开关。`false` 时引擎直通：condition 恒通过、description 输出模板原文、businessId 记 `null`，零求值开销 |
 | `operate-log.spel.cache-size` | `1024` | 表达式 LRU 缓存容量（实际生效最小值 64，超出淘汰最久未使用项） |
 | `operate-log.payload.max-request-length` | `0` | `requestBody` / `requestHeaders` / `requestQuery` / `userAgent` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
 | `operate-log.payload.max-response-length` | `0` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
 | `operate-log.payload.max-error-length` | `0` | `errorStack` / `errorMessage` 最大字符数，`<=0` 不截断 |
 | `operate-log.payload.max-extra-length` | `0` | `extra` 整体序列化后的最大字符数，`<=0` 不截断（与其他三项载荷上限一致）；超限时**逐值收缩**（每次截短最长的值）直到落入限额，`...[truncated]` 标记计入上限——不同于其余字段的整串截断，逐值收缩能保留排在末尾的键（如 `<UNSERIALIZABLE>` 占位）不被窗口切掉 |
-| `operate-log.payload.ignore-types` | 17 项内置 | 序列化参数时跳过的类型（全限定类名，父类/接口命中即算），替换为 `<IGNORED:类型简名>`；配置后整体替换默认列表。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
+| `operate-log.payload.ignore-types` | 17 项内置 | 在内置安全类型之外**追加**序列化时跳过的类型（全限定类名，父类/接口命中即算），替换为 `<IGNORED:类型简名>`；内置类型始终生效，无法通过配置移除，如需不同集合请注册自定义 `PayloadPolicy` bean。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
+
+> **升级提示**：`payload.ignore-types` 已从“整体替换”改为“追加”，内置 17 项安全防护无法再通过配置移除；必须自定义完整集合时，请改注册 `PayloadPolicy` bean。同时，默认脱敏字段新增 `apiKey` / `privateKey` / `accessKey` / `secretKey` / `creditCard`，升级后这些字段将默认被掩码。
 
 ## 日志输出字段（`OperateLogRecord`）
 
@@ -298,7 +298,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 - 字段名匹配**忽略大小写**（`Password` / `PASSWORD` / `password` 均脱敏）。
 - 命中字段的值替换为 `mask-text`（默认 `******`）。
 - JSON 内容无法解析或脱敏过程异常时**原样返回**，不阻断日志流程。
-- 敏感字段集合通过 `operate-log.mask.fields` **追加**。11 个内置默认字段（`password` / `passwd` / `pwd` / `token` / `accessToken` / `refreshToken` / `authorization` / `cookie` / `set-cookie` / `secret` / `clientSecret`）**始终脱敏，配置无法移除**——避免「只想加一个字段」却把既有脱敏项一起关掉。
+- 敏感字段集合通过 `operate-log.mask.fields` **追加**。16 个内置默认字段（`password` / `passwd` / `pwd` / `token` / `accessToken` / `refreshToken` / `authorization` / `cookie` / `set-cookie` / `secret` / `clientSecret` / `apiKey` / `privateKey` / `accessKey` / `secretKey` / `creditCard`）**始终脱敏，配置无法移除**——避免「只想加一个字段」却把既有脱敏项一起关掉。
 - **作用边界**：`requestUrl`（不含 query 的完整 URL）与 `extra` **不经过脱敏管道**。`extra` 只按开发者显式写入的内容采集，不做字段语义猜测或自动脱敏。
 
 ## 扩展点

@@ -32,7 +32,7 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- 唯一 compile 依赖：core 传递 aspectjweaver / commons-lang3 -->
+        <!-- 唯一 compile 依赖：core 传递 aspectjweaver / commons-lang3 / caffeine -->
         <dependency>
             <groupId>io.github.devoracode</groupId>
             <artifactId>operate-log-core</artifactId>

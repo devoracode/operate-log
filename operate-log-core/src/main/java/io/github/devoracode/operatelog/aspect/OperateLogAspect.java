@@ -1,5 +1,7 @@
 package io.github.devoracode.operatelog.aspect;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.devoracode.operatelog.annotation.OperateLog;
 import io.github.devoracode.operatelog.context.OperateLogContext;
 import io.github.devoracode.operatelog.context.OperateLogContextHolder;
@@ -42,7 +44,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 操作日志切面。
@@ -73,8 +74,7 @@ public class OperateLogAspect {
     private final boolean maskEnabled;
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
-    private final Map<AnnotationCacheKey, Optional<OperateLog>> annotationCache;
-    private final int maxAnnotationCacheSize;
+    private final Cache<AnnotationCacheKey, Optional<OperateLog>> annotationCache;
 
     // 参数顺序即二进制签名：README 指引宿主自行 new 本切面以扩大切点，新增字段只能追加到末尾、
     // 禁止重排——改序会让已编译的宿主按位置静默错位传参
@@ -103,8 +103,9 @@ public class OperateLogAspect {
         this.maskEnabled = maskEnabled;
         this.payloadPolicy = payloadPolicy;
         this.traceIdMdcKey = traceIdMdcKey;
-        this.maxAnnotationCacheSize = Math.max(annotationCacheSize, 64);
-        this.annotationCache = new ConcurrentHashMap<>();
+        this.annotationCache = Caffeine.newBuilder()
+                .maximumSize(Math.max(annotationCacheSize, 64))
+                .build();
     }
 
     /**
@@ -213,14 +214,12 @@ public class OperateLogAspect {
                                             Method targetMethod,
                                             Class<?> targetClass) {
         AnnotationCacheKey cacheKey = new AnnotationCacheKey(invocationMethod, targetClass);
-        Optional<OperateLog> cached = this.annotationCache.get(cacheKey);
+        Optional<OperateLog> cached = this.annotationCache.getIfPresent(cacheKey);
         if (cached != null) {
             return cached.orElse(null);
         }
         OperateLog resolved = findOperateLog(invocationMethod, targetMethod, targetClass);
-        if (this.annotationCache.size() < this.maxAnnotationCacheSize) {
-            this.annotationCache.putIfAbsent(cacheKey, Optional.ofNullable(resolved));
-        }
+        this.annotationCache.asMap().putIfAbsent(cacheKey, Optional.ofNullable(resolved));
         return resolved;
     }
 

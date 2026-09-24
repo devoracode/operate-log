@@ -18,7 +18,7 @@
 
     <!--
         依赖边界：宿主必然提供的（Spring / SLF4J / Jackson）标 optional，不向消费者传递版本；
-        宿主不必然提供的（aspectjweaver / commons-lang3）保留 compile 传递。
+        宿主不必然提供的（aspectjweaver / commons-lang3 / caffeine）保留 compile 传递。
         版本 == Boot 2.7.18 基线，只作为下界，不得更高（详见根 POM）。
     -->
     <dependencies>
@@ -77,6 +77,11 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
             <version>${commons-lang3.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>${caffeine.version}</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

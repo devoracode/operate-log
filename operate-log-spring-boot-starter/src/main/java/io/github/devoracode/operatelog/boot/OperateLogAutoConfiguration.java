@@ -59,7 +59,7 @@ public class OperateLogAutoConfiguration {
      */
     @Configuration(proxyBeanMethods = false)
     static class CommonConfiguration {
-        // 注解缓存条目数不超过宿主打了注解的方法数，固定取值只作内存兜底。
+        // 注解缓存只作热路径优化，容量超限后重新解析，不影响业务结果。
         private static final int ANNOTATION_CACHE_SIZE = 4096;
 
         private final ObjectProvider<ObjectMapper> objectMapperProvider;

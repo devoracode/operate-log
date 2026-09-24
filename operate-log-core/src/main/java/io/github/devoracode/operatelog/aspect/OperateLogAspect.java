@@ -34,9 +34,11 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.UUID;
 
 /**
@@ -56,6 +58,12 @@ public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
     private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
+    private static final Comparator<ExtraEntry> EXTRA_ENTRY_LENGTH_DESC = new Comparator<ExtraEntry>() {
+        @Override
+        public int compare(ExtraEntry left, ExtraEntry right) {
+            return Integer.compare(right.serializedLength, left.serializedLength);
+        }
+    };
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
     private final HttpContextResolver httpContextResolver;
@@ -492,30 +500,107 @@ public class OperateLogAspect {
     }
 
     private void enforceExtraLimit(Map<String, Object> extra, int limit) {
-        String serialized = this.serializer.serialize(extra);
-        while (serialized != null && serialized.length() > limit && !extra.isEmpty()) {
-            Map.Entry<String, Object> longest = null;
-            int longestLength = -1;
-            for (Map.Entry<String, Object> entry : extra.entrySet()) {
-                int length = String.valueOf(entry.getValue()).length();
-                if (length > longestLength) {
-                    longest = entry;
-                    longestLength = length;
-                }
-            }
-            if (longest == null || longestLength <= 0) {
-                break;
-            }
-            int target = longestLength - (serialized.length() - limit);
-            if (target <= 0) {
-                // 缩无可缩（单值本身就超上限）：整表降级到 _truncated，至少保证不超过 limit
+        PriorityQueue<ExtraEntry> entries = new PriorityQueue<ExtraEntry>(
+                Math.max(1, extra.size()), EXTRA_ENTRY_LENGTH_DESC);
+        int serializedLength = 2;
+        int entryCount = 0;
+        for (Map.Entry<String, Object> entry : extra.entrySet()) {
+            ExtraEntry measured = measureExtraEntry(entry.getKey(), entry.getValue());
+            if (measured == null) {
                 extra.clear();
-                extra.put("_truncated", PayloadPolicy.truncate(serialized, limit));
                 return;
             }
-            extra.put(longest.getKey(),
-                    PayloadPolicy.truncate(String.valueOf(longest.getValue()), Math.min(target, longestLength - 1)));
-            serialized = this.serializer.serialize(extra);
+            entries.offer(measured);
+            serializedLength += measured.serializedLength - 2;
+            entryCount++;
+        }
+        if (entryCount > 1) {
+            serializedLength += entryCount - 1;
+        }
+
+        while (serializedLength > limit && !entries.isEmpty()) {
+            ExtraEntry largest = entries.poll();
+            if (!extra.containsKey(largest.key)) {
+                continue;
+            }
+            int excess = serializedLength - limit;
+            if (largest.value instanceof String && largest.serializedValueLength - excess >= 2) {
+                String shortened = shortenSerializedString((String) largest.value,
+                        largest.serializedValueLength - excess);
+                if (shortened != null) {
+                    extra.put(largest.key, shortened);
+                    String serializedValue = this.serializer.serialize(shortened);
+                    int shortenedLength = serializedValue.length();
+                    int previousLength = largest.serializedLength;
+                    largest.update(shortened, shortenedLength);
+                    serializedLength += largest.serializedLength - previousLength;
+                    entries.offer(largest);
+                    continue;
+                }
+            }
+            extra.remove(largest.key);
+            serializedLength = extra.isEmpty() ? 0 : serializedLength - largest.serializedLength + 1;
+        }
+
+        if (!extra.isEmpty()) {
+            String serialized = this.serializer.serialize(extra);
+            if (serialized == null || UNSERIALIZABLE_SENTINEL.equals(serialized) || serialized.length() > limit) {
+                extra.clear();
+            }
+        }
+    }
+
+    private ExtraEntry measureExtraEntry(String key, Object value) {
+        String serializedEntry = this.serializer.serialize(Collections.singletonMap(key, value));
+        if (serializedEntry == null || UNSERIALIZABLE_SENTINEL.equals(serializedEntry)) {
+            return null;
+        }
+        int serializedValueLength = 0;
+        if (value instanceof String) {
+            String serializedValue = this.serializer.serialize(value);
+            if (serializedValue == null || UNSERIALIZABLE_SENTINEL.equals(serializedValue)) {
+                return null;
+            }
+            serializedValueLength = serializedValue.length();
+        }
+        return new ExtraEntry(key, value, serializedEntry.length(), serializedValueLength);
+    }
+
+    private String shortenSerializedString(String value, int maxSerializedLength) {
+        int low = 0;
+        int high = value.length();
+        String shortened = null;
+        while (low <= high) {
+            int middle = (low + high) >>> 1;
+            String candidate = PayloadPolicy.truncate(value, middle);
+            String serialized = this.serializer.serialize(candidate);
+            if (serialized != null && serialized.length() <= maxSerializedLength) {
+                shortened = candidate;
+                low = middle + 1;
+            } else {
+                high = middle - 1;
+            }
+        }
+        return shortened;
+    }
+
+    private static final class ExtraEntry {
+        private final String key;
+        private Object value;
+        private int serializedLength;
+        private int serializedValueLength;
+
+        private ExtraEntry(String key, Object value, int serializedLength, int serializedValueLength) {
+            this.key = key;
+            this.value = value;
+            this.serializedLength = serializedLength;
+            this.serializedValueLength = serializedValueLength;
+        }
+
+        private void update(Object value, int serializedValueLength) {
+            this.serializedLength += serializedValueLength - this.serializedValueLength;
+            this.value = value;
+            this.serializedValueLength = serializedValueLength;
         }
     }
 

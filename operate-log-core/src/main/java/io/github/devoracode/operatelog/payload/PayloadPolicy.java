@@ -4,10 +4,13 @@ import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.util.ClassUtils;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -16,10 +19,29 @@ import java.util.Set;
  * 载荷防护策略：大字段截断 + 序列化忽略类型过滤。
  *
  * <p>忽略类型按<b>全限定类名</b>匹配父类链与全部接口（含传递接口），
- * 配置接口名即可覆盖所有实现类。</p>
+ * 配置接口名即可覆盖所有实现类。直接构造时按传入集合精确生效；
+ * 需要内置安全基线时使用 {@link #createWithSafetyDefaults}。</p>
  */
 public class PayloadPolicy {
     private static final String TRUNCATED_SUFFIX = "...[truncated]";
+    private static final List<String> SAFETY_DEFAULT_IGNORED_TYPES = Collections.unmodifiableList(Arrays.asList(
+            "javax.servlet.ServletRequest",
+            "javax.servlet.ServletResponse",
+            "javax.servlet.http.HttpSession",
+            "jakarta.servlet.ServletRequest",
+            "jakarta.servlet.ServletResponse",
+            "jakarta.servlet.http.HttpSession",
+            "org.springframework.web.multipart.MultipartFile",
+            "org.springframework.validation.BindingResult",
+            "org.springframework.web.servlet.ModelAndView",
+            "java.security.Principal",
+            "org.springframework.security.core.Authentication",
+            "org.springframework.security.core.context.SecurityContext",
+            "java.io.InputStream",
+            "java.io.OutputStream",
+            "java.io.Reader",
+            "java.io.Writer",
+            "[B"));
     private static final int IGNORED_TYPE_CACHE_SIZE = 512;
     private final int maxRequestLength;
     private final int maxResponseLength;
@@ -46,6 +68,29 @@ public class PayloadPolicy {
         this.maxErrorLength = maxErrorLength;
         this.maxExtraLength = maxExtraLength;
         this.ignoredTypes = normalize(ignoredTypes);
+    }
+
+    /**
+     * 创建包含内置序列化防护类型与调用方追加类型的载荷策略。内置防护类型始终生效，
+     * 追加项为空或含重复值时仍保留完整安全基线。
+     *
+     * @param maxRequestLength request 载荷最大字符数
+     * @param maxResponseLength response 载荷最大字符数
+     * @param maxErrorLength 错误载荷最大字符数
+     * @param maxExtraLength extra 载荷最大字符数
+     * @param additionalIgnoredTypes 调用方追加的忽略类型，可为 {@code null}
+     * @return 合并内置与追加类型后的策略
+     */
+    public static PayloadPolicy createWithSafetyDefaults(int maxRequestLength,
+                                                         int maxResponseLength,
+                                                         int maxErrorLength,
+                                                         int maxExtraLength,
+                                                         Collection<String> additionalIgnoredTypes) {
+        Set<String> ignoredTypes = new LinkedHashSet<String>(SAFETY_DEFAULT_IGNORED_TYPES);
+        if (additionalIgnoredTypes != null) {
+            ignoredTypes.addAll(additionalIgnoredTypes);
+        }
+        return new PayloadPolicy(maxRequestLength, maxResponseLength, maxErrorLength, maxExtraLength, ignoredTypes);
     }
 
     /**

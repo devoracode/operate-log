@@ -115,7 +115,7 @@ public class OperateLogAutoConfiguration {
         @ConditionalOnMissingBean(PayloadPolicy.class)
         public PayloadPolicy operateLogPayloadPolicy(OperateLogProperties properties) {
             OperateLogProperties.Payload payload = properties.getPayload();
-            return new PayloadPolicy(payload.getMaxRequestLength(),
+            return PayloadPolicy.createWithSafetyDefaults(payload.getMaxRequestLength(),
                     payload.getMaxResponseLength(),
                     payload.getMaxErrorLength(),
                     payload.getMaxExtraLength(),

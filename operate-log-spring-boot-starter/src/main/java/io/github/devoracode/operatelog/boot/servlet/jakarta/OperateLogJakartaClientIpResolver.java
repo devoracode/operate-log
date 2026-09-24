@@ -37,9 +37,10 @@ public class OperateLogJakartaClientIpResolver implements ClientIpResolver {
         if (this.trustProxy) {
             String forwardedFor = request.getHeader(FORWARDED_FOR);
             if (StringUtils.isNotBlank(forwardedFor)) {
-                // 链首为最接近客户端的一跳，长度超限（伪造 / 溢出载荷）或格式非法则跳过
+                // XFF 左侧可由客户端预置，只接受当前可信代理追加的链尾
                 if (forwardedFor.length() <= MAX_HEADER_LENGTH) {
-                    String candidate = StringUtils.trim(StringUtils.substringBefore(forwardedFor, ","));
+                    int separator = forwardedFor.lastIndexOf(',');
+                    String candidate = StringUtils.trim(forwardedFor.substring(separator + 1));
                     if (isValidIp(candidate)) {
                         return candidate;
                     }

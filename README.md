@@ -219,7 +219,7 @@ operate-log:
     max-request-length: 0         # requestBody / requestHeaders / requestQuery / userAgent 最大字符数，<=0 不截断
     max-response-length: 0        # responseBody 最大字符数，<=0 不截断
     max-error-length: 0           # errorStack / errorMessage 最大字符数，<=0 不截断
-    max-extra-length: 0           # extra 整体序列化后最大字符数，<=0 不截断（超限时逐值收缩到限额内）
+    max-extra-length: 0           # extra 整体 JSON 最大字符数，<=0 不截断（超限按实际 JSON 长度缩减）
     # ignore-types:               # 在内置 17 项安全基线之外追加的忽略类型
     #   - java.util.concurrent.Callable
     # 注意：配置项会在内置 17 项安全基线之外【追加】，不会移除 Servlet、安全上下文、流、字节数组等默认防护。
@@ -242,7 +242,7 @@ operate-log:
 | `operate-log.payload.max-request-length` | `0` | `requestBody` / `requestHeaders` / `requestQuery` / `userAgent` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
 | `operate-log.payload.max-response-length` | `0` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
 | `operate-log.payload.max-error-length` | `0` | `errorStack` / `errorMessage` 最大字符数，`<=0` 不截断 |
-| `operate-log.payload.max-extra-length` | `0` | `extra` 整体序列化后的最大字符数，`<=0` 不截断（与其他三项载荷上限一致）；超限时**逐值收缩**（每次截短最长的值）直到落入限额，`...[truncated]` 标记计入上限——不同于其余字段的整串截断，逐值收缩能保留排在末尾的键（如 `<UNSERIALIZABLE>` 占位）不被窗口切掉 |
+| `operate-log.payload.max-extra-length` | `0` | `extra` 整体 JSON 的最大字符数，`<=0` 不截断（与其他三项载荷上限一致）；超限时按单条实际 JSON 长度缩减：`String` 二分截短并保留 `...[truncated]` 标记，非 `String` 按实际大小移除，保留项类型不变；最终结果严格不超过上限 |
 | `operate-log.payload.ignore-types` | 17 项内置 | 在内置安全类型之外**追加**序列化时跳过的类型（全限定类名，父类/接口命中即算），替换为 `<IGNORED:类型简名>`；内置类型始终生效，无法通过配置移除，如需不同集合请注册自定义 `PayloadPolicy` bean。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
 
 > **升级提示**：`payload.ignore-types` 已从“整体替换”改为“追加”，内置 17 项安全防护无法再通过配置移除；必须自定义完整集合时，请改注册 `PayloadPolicy` bean。同时，默认脱敏字段新增 `apiKey` / `privateKey` / `accessKey` / `secretKey` / `creditCard`，升级后这些字段将默认被掩码。
@@ -267,7 +267,7 @@ operate-log:
 | `costTime` | 运行时 | 耗时（毫秒） |
 | `startTime` / `endTime` | 运行时 | 起止时间（`Instant`，ISO-8601） |
 | `errorType` / `errorMessage` / `errorStack` | 运行时 | 异常类名 / message / 堆栈（message 与堆栈按 `payload.max-error-length` 截断），正常时为 `null` |
-| `extra` | `OperateLogContextHolder#putExtra`（业务方法内 / 各 Resolver 内） | 业务自定义字段（Map），写入后随记录落地；**由开发者主动写入，本组件不对其脱敏**（脱敏需要字段的业务语义，工具无法代判，硬猜只会误伤），请勿往 `extra` 里放密码 / token 等敏感数据；坏值（循环引用 / getter 抛错）降级为 `<UNSERIALIZABLE:类型>` 占位、不拖垮整条日志，整体按 `payload.max-extra-length` 逐值收缩限长；未写入时为 `null` |
+| `extra` | `OperateLogContextHolder#putExtra`（业务方法内 / 各 Resolver 内） | 业务自定义字段（Map），写入后随记录落地；**由开发者主动写入，本组件不对其脱敏**（脱敏需要字段的业务语义，工具无法代判，硬猜只会误伤），请勿往 `extra` 里放密码 / token 等敏感数据；坏值（循环引用 / getter 抛错）降级为 `<UNSERIALIZABLE:类型>` 占位、不拖垮整条日志，并按 `payload.max-extra-length` 的实际 JSON 长度规则限长；未写入时为 `null` |
 
 > 所有可能为 `null` 的字段在 JSON 中保留为 `null` 值，便于下游解析 schema 稳定。
 > `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 均受 `payload.*` 长度上限保护，超限截断。

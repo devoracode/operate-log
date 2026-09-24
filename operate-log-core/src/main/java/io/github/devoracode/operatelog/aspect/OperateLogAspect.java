@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 操作日志切面。
@@ -77,6 +78,7 @@ public class OperateLogAspect {
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
     private final Map<AnnotationCacheKey, Optional<OperateLog>> annotationCache;
+    private final int maxAnnotationCacheSize;
 
     // 参数顺序即二进制签名：README 指引宿主自行 new 本切面以扩大切点，新增字段只能追加到末尾、
     // 禁止重排——改序会让已编译的宿主按位置静默错位传参
@@ -105,16 +107,8 @@ public class OperateLogAspect {
         this.maskEnabled = maskEnabled;
         this.payloadPolicy = payloadPolicy;
         this.traceIdMdcKey = traceIdMdcKey;
-        final int maxCacheSize = Math.max(annotationCacheSize, 64);
-        this.annotationCache = Collections.synchronizedMap(new LinkedHashMap<AnnotationCacheKey, Optional<OperateLog>>(
-                16,
-                0.75f,
-                true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<AnnotationCacheKey, Optional<OperateLog>> eldest) {
-                return size() > maxCacheSize;
-            }
-        });
+        this.maxAnnotationCacheSize = Math.max(annotationCacheSize, 64);
+        this.annotationCache = new ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>>();
     }
 
     /**
@@ -228,7 +222,9 @@ public class OperateLogAspect {
             return cached.orElse(null);
         }
         OperateLog resolved = findOperateLog(invocationMethod, targetMethod, targetClass);
-        this.annotationCache.putIfAbsent(cacheKey, Optional.ofNullable(resolved));
+        if (this.annotationCache.size() < this.maxAnnotationCacheSize) {
+            this.annotationCache.putIfAbsent(cacheKey, Optional.ofNullable(resolved));
+        }
         return resolved;
     }
 

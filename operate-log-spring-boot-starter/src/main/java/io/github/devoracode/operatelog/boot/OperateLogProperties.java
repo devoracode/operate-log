@@ -76,7 +76,7 @@ public class OperateLogProperties {
         /** 关闭后表达式全部直通，零求值开销（见 DefaultSpelEngine）。 */
         private boolean enabled = true;
 
-        /** 表达式解析缓存条数上限，超出按 LRU 淘汰。 */
+        /** 表达式解析缓存条数上限（实际生效最小值 64）；写满后不再放入新条目。 */
         private int cacheSize = 1024;
     }
 

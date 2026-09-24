@@ -8,12 +8,12 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 载荷防护策略：大字段截断 + 序列化忽略类型过滤。
@@ -48,15 +48,7 @@ public class PayloadPolicy {
     private final int maxErrorLength;
     private final int maxExtraLength;
     private final Set<String> ignoredTypes;
-    private final Map<Class<?>, Optional<String>> ignoredTypeCache = Collections.synchronizedMap(new LinkedHashMap<Class<?>, Optional<String>>(
-            16,
-            0.75f,
-            true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Class<?>, Optional<String>> eldest) {
-            return size() > IGNORED_TYPE_CACHE_SIZE;
-        }
-    });
+    private final Map<Class<?>, Optional<String>> ignoredTypeCache = new ConcurrentHashMap<Class<?>, Optional<String>>();
 
     public PayloadPolicy(int maxRequestLength,
                          int maxResponseLength,
@@ -188,7 +180,9 @@ public class PayloadPolicy {
             return cached.orElse(null);
         }
         String matched = resolveIgnoredType(type);
-        this.ignoredTypeCache.putIfAbsent(type, Optional.ofNullable(matched));
+        if (this.ignoredTypeCache.size() < IGNORED_TYPE_CACHE_SIZE) {
+            this.ignoredTypeCache.putIfAbsent(type, Optional.ofNullable(matched));
+        }
         return matched;
     }
 

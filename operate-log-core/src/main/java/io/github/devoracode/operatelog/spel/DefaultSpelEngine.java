@@ -12,8 +12,6 @@ import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.SimpleEvaluationContext;
 
 import java.lang.reflect.Method;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -22,8 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 总开关 {@code enabled=false} 时零求值（条件恒通过、模板原样输出、求值返回 null）；
  * 单表达式失败按同一方向就地降级，原因以 debug 暴露。
  *
- * <p>表达式缓存为定容 LRU；{@link Collections#synchronizedMap} 保证线程安全，
- * 并发下未命中重复解析只是幂等浪费，因此不加全局锁。</p>
+ * <p>表达式缓存为定容 {@link ConcurrentHashMap}，读路径无锁；写入侧在达到容量上限后不再放入
+ * （key 空间由编译期表达式/方法集合天然有界，满了即冻结，重复解析只是幂等浪费）。</p>
  *
  * <p><b>安全沙箱</b>：本引擎使用 {@link SimpleEvaluationContext#forReadOnlyDataBinding()}，
  * 仅支持变量读取、属性访问与实例方法调用，<b>不支持</b>类型引用（{@code T(...)}）、构造函数
@@ -44,9 +42,10 @@ public class DefaultSpelEngine implements SpelEngine {
     private final DefaultParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
     private final Map<String, Expression> expressionCache;
     /**
-     * 方法参数名缓存：定容 LRU，与 expressionCache 共享同一容量上限。
+     * 方法参数名缓存：与 expressionCache 共享同一容量上限。
      */
     private final Map<Method, String[]> parameterNameCache;
+    private final int maxCacheSize;
     private final boolean enabled;
 
     public DefaultSpelEngine(int cacheSize) {
@@ -55,23 +54,9 @@ public class DefaultSpelEngine implements SpelEngine {
 
     public DefaultSpelEngine(int cacheSize, boolean enabled) {
         this.enabled = enabled;
-        final int maxCacheSize = Math.max(cacheSize, 64);
-        this.expressionCache = Collections.synchronizedMap(new LinkedHashMap<String, Expression>(16,
-                0.75f,
-                true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Expression> eldest) {
-                return size() > maxCacheSize;
-            }
-        });
-        this.parameterNameCache = Collections.synchronizedMap(new LinkedHashMap<Method, String[]>(16,
-                0.75f,
-                true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<Method, String[]> eldest) {
-                return size() > maxCacheSize;
-            }
-        });
+        this.maxCacheSize = Math.max(cacheSize, 64);
+        this.expressionCache = new ConcurrentHashMap<String, Expression>();
+        this.parameterNameCache = new ConcurrentHashMap<Method, String[]>();
     }
 
     @Override
@@ -149,7 +134,9 @@ public class DefaultSpelEngine implements SpelEngine {
         }
         Expression parsedExpression = template ? this.parser.parseExpression(value,
                 new TemplateParserContext()) : this.parser.parseExpression(value);
-        this.expressionCache.put(cacheKey, parsedExpression);
+        if (this.expressionCache.size() < this.maxCacheSize) {
+            this.expressionCache.putIfAbsent(cacheKey, parsedExpression);
+        }
         return parsedExpression;
     }
 
@@ -200,7 +187,9 @@ public class DefaultSpelEngine implements SpelEngine {
         }
         String[] discovered = this.parameterNameDiscoverer.getParameterNames(method);
         String[] resolved = discovered == null ? NO_PARAMETER_NAMES : discovered;
-        this.parameterNameCache.putIfAbsent(method, resolved);
+        if (this.parameterNameCache.size() < this.maxCacheSize) {
+            this.parameterNameCache.putIfAbsent(method, resolved);
+        }
         return resolved;
     }
 }

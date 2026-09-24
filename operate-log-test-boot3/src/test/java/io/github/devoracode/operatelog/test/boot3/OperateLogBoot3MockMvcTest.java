@@ -206,6 +206,16 @@ class OperateLogBoot3MockMvcTest {
     }
 
     @Test
+    void reservedVariableNamesWinOverParameterNames() throws Exception {
+        this.mockMvc.perform(get("/demo/spel-shadow/shadow-7/trap"));
+
+        Map<String, Object> record = lastRecord();
+        // 参数名 result / p0 不得改写 #result（方法返回值）与 #p0（第 0 个参数）
+        assertEquals("shadow:returned-shadow-7|shadow-7", text(record, "description"));
+        assertEquals("returned-shadow-7", text(record, "businessId"));
+    }
+
+    @Test
     void brokenSpelDegradesInsteadOfFailing() throws Exception {
         this.mockMvc.perform(get("/demo/spel-broken"));
 

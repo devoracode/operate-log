@@ -14,32 +14,22 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * SpEL 缓存回归：定容 {@link java.util.concurrent.ConcurrentHashMap} 在写满与并发下仍求值正确。
+ * SpEL 引擎回归：默认开启时每次调用重新解析表达式，并发共用一个解析器仍求值正确；
+ * {@code enabled=false} 时三个入口全部直通。
  */
-class OperateLogBoot3SpelCacheTest {
+class OperateLogBoot3SpelEngineTest {
 
     private static OperateLogContext emptyContext() {
         return new OperateLogContext(null, null, null, null, new Object[0]);
     }
 
     @Test
-    void evaluationStaysCorrectAfterCacheSaturates() {
-        DefaultSpelEngine engine = new DefaultSpelEngine(64, true);
-        OperateLogContext context = emptyContext();
-        // 写满容量后再求值：缓存满后不再放入，但重复解析不应影响结果
-        for (int i = 0; i < 200; i++) {
-            assertEquals("v" + i, engine.evaluate("'v" + i + "'", context));
-        }
-        for (int i = 0; i < 200; i++) {
-            assertEquals("v" + i, engine.evaluate("'v" + i + "'", context));
-        }
-    }
-
-    @Test
     void concurrentEvaluationReturnsCorrectResults() throws Exception {
-        DefaultSpelEngine engine = new DefaultSpelEngine(64, true);
+        DefaultSpelEngine engine = new DefaultSpelEngine(true);
         int threads = 8;
         int iterations = 500;
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -65,11 +55,20 @@ class OperateLogBoot3SpelCacheTest {
 
     @Test
     void templatesAndDegradationUnaffected() {
-        DefaultSpelEngine engine = new DefaultSpelEngine(64, true);
+        DefaultSpelEngine engine = new DefaultSpelEngine(true);
         OperateLogContext context = emptyContext();
         assertNotNull(engine.evaluateTemplate("no-placeholder", context));
         assertEquals("no-placeholder", engine.evaluateTemplate("no-placeholder", context));
         // 语法错误按方向降级：不抛异常，业务链路不受影响
         engine.evaluate("1 +", context);
+    }
+
+    @Test
+    void disabledEnginePassesThroughWithoutEvaluation() {
+        DefaultSpelEngine engine = new DefaultSpelEngine(false);
+        OperateLogContext context = emptyContext();
+        assertNull(engine.evaluate("'v'", context));
+        assertEquals("查询用户 #{#userId}", engine.evaluateTemplate("查询用户 #{#userId}", context));
+        assertTrue(engine.evaluateBoolean("1 +", context));
     }
 }

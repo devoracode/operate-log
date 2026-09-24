@@ -17,26 +17,21 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.Map;
 
 import static io.github.devoracode.operatelog.test.boot3.LogRecords.text;
-import static io.github.devoracode.operatelog.test.boot3.LogRecords.flag;
-import static io.github.devoracode.operatelog.test.boot3.LogRecords.isNull;
-import static io.github.devoracode.operatelog.test.boot3.LogRecords.child;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
  * 配置项在真实容器里的生效语义（只覆盖默认值，不改配置键）：{@code http.capture-headers} /
- * {@code http.trust-proxy} / {@code mask.enabled} / {@code payload.max-response-length} /
- * {@code spel.enabled}。这些属性会整体切换语义，故用独立上下文跑，避免与默认配置用例互串。
+ * {@code http.trust-proxy} / {@code mask.enabled} / {@code payload.max-response-length}。
+ * 这些属性会整体切换语义，故用独立上下文跑，避免与默认配置用例互串。
  */
 @SpringBootTest(properties = {
         "operate-log.http.capture-headers=true",
         "operate-log.http.trust-proxy=true",
         "operate-log.mask.enabled=false",
-        "operate-log.payload.max-response-length=64",
-        "operate-log.spel.enabled=false"})
+        "operate-log.payload.max-response-length=64"})
 @AutoConfigureMockMvc
 class OperateLogBoot3ConfigurationOverrideTest {
 
@@ -112,25 +107,6 @@ class OperateLogBoot3ConfigurationOverrideTest {
         // max-response-length=64：上限含 ...[truncated] 标记，结果长度恰好 64
         assertEquals(64, responseBody.length(), "实际长度 " + responseBody.length());
         assertTrue(responseBody.endsWith("...[truncated]"), responseBody);
-    }
-
-    @Test
-    void spelDisabledFallsBackToPassthrough() throws Exception {
-        this.mockMvc.perform(get("/demo/42"));
-
-        Map<String, Object> record = lastRecord();
-        // 引擎直通：模板输出原文、businessId 为 null、condition 恒通过（记录照常产出）
-        assertEquals("查询用户 #{#userId}", text(record, "description"));
-        assertTrue(isNull(record, "businessId"), String.valueOf(record.get("businessId")));
-        assertTrue(flag(record, "success"));
-    }
-
-    @Test
-    void extraChannelStillWorksWhenSpelDisabled() throws Exception {
-        this.mockMvc.perform(get("/demo/42"));
-
-        assertEquals("extra-channel", text(child(lastRecord(), "extra"), "demo"));
-        assertFalse(appender.list.isEmpty());
     }
 
     private Map<String, Object> lastRecord() {

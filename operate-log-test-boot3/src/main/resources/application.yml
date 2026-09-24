@@ -15,9 +15,6 @@ operate-log:
     # fields:
     #   - mobile
     #   - idCard
-  spel:
-    enabled: true
-    cache-size: 1024
   payload:
     max-request-length: 0
     max-response-length: 0

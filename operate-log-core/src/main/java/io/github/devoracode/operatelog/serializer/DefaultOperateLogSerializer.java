@@ -43,13 +43,18 @@ public class DefaultOperateLogSerializer implements OperateLogSerializer {
             if (i > 0) {
                 sb.append(',');
             }
-            String element = writeQuietly(arguments[i]);
-            if (element == null) {
-                sb.append("\"<UNSERIALIZABLE:")
-                        .append(arguments[i].getClass().getSimpleName())
-                        .append(">\"");
+            Object argument = arguments[i];
+            if (argument == null) {
+                sb.append("null");
             } else {
-                sb.append(element);
+                String element = writeQuietly(argument);
+                if (element == null) {
+                    sb.append("\"<UNSERIALIZABLE:")
+                            .append(argument.getClass().getSimpleName())
+                            .append(">\"");
+                } else {
+                    sb.append(element);
+                }
             }
         }
         sb.append(']');

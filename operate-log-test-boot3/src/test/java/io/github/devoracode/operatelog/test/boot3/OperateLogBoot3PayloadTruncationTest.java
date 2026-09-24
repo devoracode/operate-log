@@ -1,5 +1,6 @@
 package io.github.devoracode.operatelog.test.boot3;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 
+import static io.github.devoracode.operatelog.test.boot3.LogRecords.child;
 import static io.github.devoracode.operatelog.test.boot3.LogRecords.text;
 import static io.github.devoracode.operatelog.test.boot3.LogRecords.flag;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -47,6 +49,9 @@ class OperateLogBoot3PayloadTruncationTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void attachAppender() {
@@ -130,6 +135,25 @@ class OperateLogBoot3PayloadTruncationTest {
         String extra = String.valueOf(extraValue);
         assertTrue(extra.length() <= 2048, "extra payload exceeds configured limit: " + extra.length());
         assertTrue(extra.contains("UNSERIALIZABLE"), "坏值应降级为占位符: " + extra);
+        Map<String, Object> extraMap = child(record, "extra");
+        assertFalse(extraMap.containsKey("nested"), "超大非字符串值应移除，不得字符串化: " + extraMap);
+        assertFalse(extraMap.containsKey("_truncated"), "不应回退为改变类型的 _truncated 字符串: " + extraMap);
+    }
+
+    @Test
+    void escapedStringExtraUsesSerializedLengthBudget() throws Exception {
+        this.mockMvc.perform(get("/demo/extra-escaped"));
+
+        Map<String, Object> extra = child(lastRecord(), "extra");
+        String serialized = this.objectMapper.writeValueAsString(extra);
+        assertTrue(serialized.length() <= MAX_PAYLOAD_LENGTH,
+                "extra JSON 长度 " + serialized.length() + " 超过上限");
+        assertTrue(serialized.length() >= MAX_PAYLOAD_LENGTH - 128,
+                "转义值应按实际 JSON 长度充分使用预算: " + serialized.length());
+        String escaped = text(extra, "escaped");
+        assertTrue(escaped.endsWith(TRUNCATED_SUFFIX), escaped);
+        assertTrue(escaped.length() > 900,
+                "转义字符不应导致过度收缩: json=" + serialized + ", value=" + escaped);
     }
 
     private int countRecords() {

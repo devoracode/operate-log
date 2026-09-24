@@ -15,18 +15,13 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
  * 默认 SpEL 执行器：表达式问题只影响字段质量，绝不中断日志链路。
  * 总开关 {@code enabled=false} 时零求值（条件恒通过、模板原样输出、求值返回 null）；
  * 单表达式失败按同一方向就地降级，原因以 debug 暴露。
- *
- * <p>表达式缓存为定容 {@link ConcurrentHashMap}，读路径无锁；写入侧在达到容量上限后不再放入
- * （key 空间由编译期表达式/方法集合天然有界，满了即冻结，重复解析只是幂等浪费）。</p>
  *
  * <p><b>安全沙箱</b>：本引擎使用 {@link SimpleEvaluationContext#forReadOnlyDataBinding()}，
  * 仅支持变量读取、属性访问与实例方法调用，<b>不支持</b>类型引用（{@code T(...)}）、构造函数
@@ -37,10 +32,8 @@ import java.util.regex.Pattern;
  */
 public class DefaultSpelEngine implements SpelEngine {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSpelEngine.class);
-    private static final String TEMPLATE_PREFIX = "T:";
-    private static final String EXPRESSION_PREFIX = "E:";
     /**
-     * 解析不到参数名时的哨兵：{@link ConcurrentHashMap} 不允许 null 值。
+     * 解析不到参数名时的空数组哨兵，避免后续遍历判空。
      */
     private static final String[] NO_PARAMETER_NAMES = new String[0];
     /**
@@ -53,23 +46,14 @@ public class DefaultSpelEngine implements SpelEngine {
     private static final Pattern POSITIONAL_VARIABLE_NAME = Pattern.compile("[pa]\\d+");
     private final ExpressionParser parser = new SpelExpressionParser();
     private final DefaultParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
-    private final Map<String, Expression> expressionCache;
-    /**
-     * 方法参数名缓存：与 expressionCache 共享同一容量上限。
-     */
-    private final Map<Method, String[]> parameterNameCache;
-    private final int maxCacheSize;
     private final boolean enabled;
 
-    public DefaultSpelEngine(int cacheSize) {
-        this(cacheSize, true);
+    public DefaultSpelEngine() {
+        this(true);
     }
 
-    public DefaultSpelEngine(int cacheSize, boolean enabled) {
+    public DefaultSpelEngine(boolean enabled) {
         this.enabled = enabled;
-        this.maxCacheSize = Math.max(cacheSize, 64);
-        this.expressionCache = new ConcurrentHashMap<>();
-        this.parameterNameCache = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -139,18 +123,9 @@ public class DefaultSpelEngine implements SpelEngine {
     }
 
     private Expression getExpression(String value, boolean template) {
-        String prefix = template ? TEMPLATE_PREFIX : EXPRESSION_PREFIX;
-        String cacheKey = prefix + value;
-        Expression cached = this.expressionCache.get(cacheKey);
-        if (cached != null) {
-            return cached;
-        }
-        Expression parsedExpression = template ? this.parser.parseExpression(value,
-                new TemplateParserContext()) : this.parser.parseExpression(value);
-        if (this.expressionCache.size() < this.maxCacheSize) {
-            this.expressionCache.putIfAbsent(cacheKey, parsedExpression);
-        }
-        return parsedExpression;
+        return template
+                ? this.parser.parseExpression(value, new TemplateParserContext())
+                : this.parser.parseExpression(value);
     }
 
     private SimpleEvaluationContext createEvaluationContext(OperateLogContext context) {
@@ -191,23 +166,11 @@ public class DefaultSpelEngine implements SpelEngine {
                 || POSITIONAL_VARIABLE_NAME.matcher(variableName).matches();
     }
 
-    /**
-     * 解析并缓存方法参数名。{@link DefaultParameterNameDiscoverer} 在 {@code -parameters} 不可用时
-     * 会回落到读字节码，而每次求值都可能调用本方法，不缓存会把开销按 QPS 放大；解析不到时缓存空数组哨兵。
-     */
     private String[] resolveParameterNames(Method method) {
         if (method == null) {
             return NO_PARAMETER_NAMES;
         }
-        String[] cached = this.parameterNameCache.get(method);
-        if (cached != null) {
-            return cached;
-        }
         String[] discovered = this.parameterNameDiscoverer.getParameterNames(method);
-        String[] resolved = discovered == null ? NO_PARAMETER_NAMES : discovered;
-        if (this.parameterNameCache.size() < this.maxCacheSize) {
-            this.parameterNameCache.putIfAbsent(method, resolved);
-        }
-        return resolved;
+        return discovered == null ? NO_PARAMETER_NAMES : discovered;
     }
 }

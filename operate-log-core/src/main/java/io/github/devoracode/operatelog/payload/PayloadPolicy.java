@@ -11,10 +11,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 载荷防护策略：大字段截断 + 序列化忽略类型过滤。
@@ -43,7 +40,6 @@ public class PayloadPolicy {
             "java.io.Reader",
             "java.io.Writer",
             "[B"));
-    private static final int IGNORED_TYPE_CACHE_SIZE = 512;
     private final int maxRequestLength;
     private final int maxResponseLength;
     @Getter
@@ -51,7 +47,6 @@ public class PayloadPolicy {
     @Getter
     private final int maxExtraLength;
     private final Set<String> ignoredTypes;
-    private final Map<Class<?>, Optional<String>> ignoredTypeCache = new ConcurrentHashMap<>();
 
     public PayloadPolicy(int maxRequestLength,
                          int maxResponseLength,
@@ -105,7 +100,7 @@ public class PayloadPolicy {
             if (argument == null) {
                 continue;
             }
-            String ignoredType = findIgnoredType(argument.getClass());
+            String ignoredType = resolveIgnoredType(argument.getClass());
             if (ignoredType == null) {
                 continue;
             }
@@ -167,18 +162,6 @@ public class PayloadPolicy {
             return cutIndex - 1;
         }
         return cutIndex;
-    }
-
-    private String findIgnoredType(Class<?> type) {
-        Optional<String> cached = this.ignoredTypeCache.get(type);
-        if (cached != null) {
-            return cached.orElse(null);
-        }
-        String matched = resolveIgnoredType(type);
-        if (this.ignoredTypeCache.size() < IGNORED_TYPE_CACHE_SIZE) {
-            this.ignoredTypeCache.putIfAbsent(type, Optional.ofNullable(matched));
-        }
-        return matched;
     }
 
     private String resolveIgnoredType(Class<?> type) {

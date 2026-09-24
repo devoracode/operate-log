@@ -37,9 +37,6 @@ public class OperateLogProperties {
     /** 敏感数据脱敏配置。 */
     private Mask mask = new Mask();
 
-    /** SpEL 引擎配置。 */
-    private Spel spel = new Spel();
-
     /** 载荷防护配置。 */
     private Payload payload = new Payload();
 
@@ -68,16 +65,6 @@ public class OperateLogProperties {
          * 内置 16 项取并集生效：默认字段始终脱敏，配置无法移除。
          */
         private Set<String> fields = new LinkedHashSet<>();
-    }
-
-    @Data
-    public static class Spel {
-
-        /** 关闭后表达式全部直通，零求值开销（见 DefaultSpelEngine）。 */
-        private boolean enabled = true;
-
-        /** 表达式解析缓存条数上限（实际生效最小值 64）；写满后不再放入新条目。 */
-        private int cacheSize = 1024;
     }
 
     @Data

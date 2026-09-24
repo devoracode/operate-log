@@ -59,6 +59,9 @@ public class OperateLogAutoConfiguration {
      */
     @Configuration(proxyBeanMethods = false)
     static class CommonConfiguration {
+        // 注解缓存条目数不超过宿主打了注解的方法数，固定取值只作内存兜底。
+        private static final int ANNOTATION_CACHE_SIZE = 4096;
+
         private final ObjectProvider<ObjectMapper> objectMapperProvider;
         /**
          * serializer / masker / handler 三个 bean 共享同一份宿主 mapper 副本，{@code copy()} 只做一次。
@@ -99,13 +102,13 @@ public class OperateLogAutoConfiguration {
         }
 
         /**
-         * 默认 SpEL 引擎（表达式缓存与降级策略见 {@code DefaultSpelEngine}）。
+         * 默认 SpEL 引擎（降级策略见 {@code DefaultSpelEngine}）。
+         * 需要整体直通时宿主注册 {@code new DefaultSpelEngine(false)} 覆盖本 bean。
          */
         @Bean
         @ConditionalOnMissingBean(SpelEngine.class)
-        public SpelEngine operateLogSpelEngine(OperateLogProperties properties) {
-            return new DefaultSpelEngine(properties.getSpel().getCacheSize(),
-                    properties.getSpel().isEnabled());
+        public SpelEngine operateLogSpelEngine() {
+            return new DefaultSpelEngine();
         }
 
         /**
@@ -161,7 +164,7 @@ public class OperateLogAutoConfiguration {
                     properties.getMask().isEnabled(),
                     payloadPolicy,
                     properties.getTraceIdMdcKey(),
-                    properties.getSpel().getCacheSize() * 4);
+                    ANNOTATION_CACHE_SIZE);
         }
 
         /**

@@ -182,6 +182,16 @@ class OperateLogBoot2StarterAssemblyTest {
     }
 
     @Test
+    void plainTextStopsUnquotedValueAtWhitespace() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("password=****** def ghi",
+                    masker.maskPlainText("password=abc def ghi"));
+        });
+    }
+
+    @Test
     void plainTextMasksCompleteQuotedValueContainingWhitespace() {
         this.runner.run((context) -> {
             SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);

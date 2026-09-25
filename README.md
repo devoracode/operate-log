@@ -294,7 +294,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 - 命中字段的值替换为 `mask-text`（默认 `******`）。
 - JSON 内容无法解析或脱敏过程异常时**原样返回**，不阻断日志流程。
 - 敏感字段集合通过 `operate-log.mask.fields` **追加**。16 个内置默认字段（`password` / `passwd` / `pwd` / `token` / `accessToken` / `refreshToken` / `authorization` / `cookie` / `set-cookie` / `secret` / `clientSecret` / `apiKey` / `privateKey` / `accessKey` / `secretKey` / `creditCard`）**始终脱敏，配置无法移除**——避免「只想加一个字段」却把既有脱敏项一起关掉。
-- **作用边界**：`requestUrl`（不含 query 的完整 URL）与 `extra` **不经过脱敏管道**。`extra` 只按开发者显式写入的内容采集，不做字段语义猜测或自动脱敏。
+- **作用边界**：脱敏仅作用于 `requestHeaders`、`requestBody`、`responseBody`、`requestQuery`、`errorMessage` 和 `errorStack`；`requestUrl`（不含 query 的完整 URL）、`userAgent`、`extra` 及其他元数据字段不经过脱敏管道。`extra` 只按开发者显式写入的内容采集，不做字段语义猜测或自动脱敏。
 
 ## 扩展点
 

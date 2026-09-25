@@ -375,6 +375,8 @@ public class OperateLogAspect {
             requestBody = this.serializer.serializeArguments(requestArguments);
         }
         String responseBody = annotation.recordResponse() ? this.serializer.serialize(context.getResult()) : null;
+        // 脱敏字段：requestHeaders、requestBody、responseBody、requestQuery、errorMessage、errorStack；
+        // requestUrl、userAgent、extra 及其余元数据不经过脱敏管道。
         if (this.maskEnabled) {
             requestHeaders = this.sensitiveDataMasker.mask(requestHeaders);
             requestBody = this.sensitiveDataMasker.mask(requestBody);

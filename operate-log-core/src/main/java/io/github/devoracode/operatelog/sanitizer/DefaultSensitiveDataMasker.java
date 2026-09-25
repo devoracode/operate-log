@@ -192,8 +192,9 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
     }
 
     /**
-     * 纯文本脱敏：按敏感字段名做大小写不敏感的子串搜索，命中后将其后连续的非空白值替换为 maskText。
-     * 匹配模式覆盖常见异常 message 格式：{@code password=abc123}、{@code token: xyz}、{@code "secret":"val"}。
+     * 纯文本脱敏：按敏感字段名做大小写不敏感的子串搜索，仅在字段名后出现 {@code =} / {@code :}
+     * 赋值分隔符时替换对应值，避免把 {@code TokenService} 等标识符误判为敏感值。
+     * 覆盖常见异常 message 格式：{@code password=abc123}、{@code token: xyz}、{@code "secret":"val"}。
      */
     @Override
     public String maskPlainText(String text) {
@@ -212,18 +213,25 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
             boolean hasSeparator = false;
             while (valueStart < text.length()) {
                 char separator = text.charAt(valueStart);
-                if (!hasSeparator && isQuote(separator)) {
-                    valueStart++;
-                } else if (separator == '=' || separator == ':' || Character.isWhitespace(separator)) {
+                if (separator == '=' || separator == ':') {
                     hasSeparator = true;
                     valueStart++;
+                } else if (Character.isWhitespace(separator)) {
+                    valueStart++;
+                } else if (!hasSeparator && isQuote(separator)) {
+                    valueStart++;
+                } else if (hasSeparator && isQuote(separator)) {
+                    quote = separator;
+                    valueStart++;
+                    break;
                 } else {
-                    if (hasSeparator && isQuote(separator)) {
-                        quote = separator;
-                        valueStart++;
-                    }
                     break;
                 }
+            }
+            if (!hasSeparator) {
+                result.append(text, lastEnd, matcher.end());
+                lastEnd = matcher.end();
+                continue;
             }
             int valueEnd = findValueEnd(text, valueStart, quote);
             result.append(text, lastEnd, valueStart);

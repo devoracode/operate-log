@@ -213,12 +213,30 @@ class OperateLogBoot3StarterAssemblyTest {
     }
 
     @Test
-    void plainTextTreatsWhitespaceAsKeyValueSeparator() {
+    void plainTextSkipsWhitespaceAfterExplicitAssignmentSeparator() {
         this.runner.run((context) -> {
             SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
 
             assertEquals("token=\t****** password=******",
                     masker.maskPlainText("token=\tAAA password=BBB"));
+        });
+    }
+
+    @Test
+    void plainTextSkipsSensitiveFieldPrefixesWithoutAssignmentSeparator() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("com.foo.TokenService.handle(Foo.java:10)",
+                    masker.maskPlainText("com.foo.TokenService.handle(Foo.java:10)"));
+            assertEquals("java.lang.IllegalStateException: PasswordEncoder",
+                    masker.maskPlainText("java.lang.IllegalStateException: PasswordEncoder"));
+            assertEquals("\"token bucket exhausted\"",
+                    masker.maskPlainText("\"token bucket exhausted\""));
+            assertEquals("TokenService SecretKeySpec AccessKeyHelper PasswordEncoder CookieJar",
+                    masker.maskPlainText("TokenService SecretKeySpec AccessKeyHelper PasswordEncoder CookieJar"));
+            assertEquals("token bucket password=******",
+                    masker.maskPlainText("token bucket password=secret"));
         });
     }
 

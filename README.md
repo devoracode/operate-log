@@ -484,6 +484,9 @@ OperateLogAspect @Around 拦截
   需要该字段有值，请让追踪体系在进入业务方法前写入 MDC。
 - traceId **不跨服务**：即便有值，跨进程传递也完全依赖宿主追踪体系（Micrometer / Sleuth / OTel）
   自己的传播能力，本组件不参与传播。
+- 注解缓存的键是字符串（`目标类名#方法签名`），**不持有 `Class` 引用**，因此类可正常卸载。
+  代价是每次被拦截的调用都要拼一次方法签名，比直接用 `Method` 的 `hashCode` 略贵；
+  换来的是缓存结构为单层 map，且键可读、便于排查。
 - `extra` 与 traceId 都随线程走：业务方法内切换线程的场景（`@Async`、自建线程池、
   `CompletableFuture` 默认线程池等）不会自动传播——切线程后 `OperateLogContextHolder#putExtra`
   写入的字段不再归属当前记录，MDC 也不会跟着切过去，traceId 关联同样失效。跨线程需要时自行传递

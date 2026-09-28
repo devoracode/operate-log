@@ -13,9 +13,6 @@ import io.github.devoracode.operatelog.resolver.OperatorResolver;
 import io.github.devoracode.operatelog.sanitizer.SensitiveDataMasker;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import io.github.devoracode.operatelog.spel.SpelEngine;
-import lombok.AccessLevel;
-import lombok.EqualsAndHashCode;
-import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
@@ -67,7 +64,7 @@ public class OperateLogAspect {
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
     private final int annotationCacheSize;
-    private final ClassValue<ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>>> annotationCaches;
+    private final ConcurrentHashMap<String, Optional<OperateLog>> annotationCaches;
 
     // 参数顺序即二进制签名：README 指引宿主自行 new 本切面以扩大切点，新增字段只能追加到末尾、
     // 禁止重排——改序会让已编译的宿主按位置静默错位传参
@@ -97,12 +94,7 @@ public class OperateLogAspect {
         this.payloadPolicy = payloadPolicy;
         this.traceIdMdcKey = traceIdMdcKey;
         this.annotationCacheSize = Math.max(annotationCacheSize, 64);
-        this.annotationCaches = new ClassValue<ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>>>() {
-            @Override
-            protected ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>> computeValue(Class<?> type) {
-                return new ConcurrentHashMap<>();
-            }
-        };
+        this.annotationCaches = new ConcurrentHashMap<>();
     }
 
     /**
@@ -204,12 +196,13 @@ public class OperateLogAspect {
     private OperateLog findOperateLogCached(Method invocationMethod,
                                             Method targetMethod,
                                             Class<?> targetClass) {
-        ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>> annotationCache =
-                this.annotationCaches.get(targetClass);
-        AnnotationCacheKey cacheKey = new AnnotationCacheKey(invocationMethod, targetClass);
+        // 键是完整方法签名：注解解析结果同时取决于调用方法与目标类（查找链会遍历目标类实现的
+        // 全部接口），两者都进键才不丢区分度。toGenericString 已覆盖声明类 / 名称 / 参数 /
+        // 返回类型，泛型接口下的桥方法与协变返回不会撞键。
+        String cacheKey = targetClass.getName() + "#" + invocationMethod.toGenericString();
         // value 包一层 Optional：ConcurrentHashMap 不接受 null value，而「查过且没有注解」
         // 必须与「尚未查过」区分开，否则未标注方法每次调用都要重新反射查找。
-        Optional<OperateLog> cached = annotationCache.get(cacheKey);
+        Optional<OperateLog> cached = this.annotationCaches.get(cacheKey);
         if (cached != null) {
             return cached.orElse(null);
         }
@@ -217,18 +210,11 @@ public class OperateLogAspect {
         // 判满即整表清空：本缓存只服务「目标类 × 被拦截方法」这一组有限键，预热后基本不再增长，
         // 溢出本就罕见，整表清空的代价远低于为此引入带准入策略的第三方缓存。
         // 并发下 size() 与 put 之间不原子，上界是尽力而为——与原先 maximumSize 的语义同级。
-        if (annotationCache.size() >= this.annotationCacheSize) {
-            annotationCache.clear();
+        if (this.annotationCaches.size() >= this.annotationCacheSize) {
+            this.annotationCaches.clear();
         }
-        annotationCache.putIfAbsent(cacheKey, Optional.ofNullable(resolved));
+        this.annotationCaches.putIfAbsent(cacheKey, Optional.ofNullable(resolved));
         return resolved;
-    }
-
-    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-    @EqualsAndHashCode
-    private static final class AnnotationCacheKey {
-        private final Method method;
-        private final Class<?> targetClass;
     }
 
     private OperateLog findOperateLog(Method invocationMethod,

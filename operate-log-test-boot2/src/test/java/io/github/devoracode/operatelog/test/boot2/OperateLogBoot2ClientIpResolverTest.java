@@ -7,6 +7,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
+import java.lang.reflect.Method;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class OperateLogBoot2ClientIpResolverTest {
@@ -104,6 +106,19 @@ class OperateLogBoot2ClientIpResolverTest {
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
         assertEquals("10.0.0.12",
                 new JavaxClientIpResolver(true).resolve());
+    }
+
+    @Test
+    void sharedIpValidatorExposesStrictLiteralValidation() throws Exception {
+        Class<?> type;
+        try {
+            type = Class.forName("io.github.devoracode.operatelog.boot.servlet.ServletIpUtils");
+        } catch (ClassNotFoundException ex) {
+            throw new AssertionError("ServletIpUtils 公共工具类必须存在", ex);
+        }
+        Method method = type.getMethod("isValidIp", String.class);
+        assertEquals(Boolean.TRUE, method.invoke(null, "2001:db8::1"));
+        assertEquals(Boolean.FALSE, method.invoke(null, "1:::2"));
     }
 
     @Test

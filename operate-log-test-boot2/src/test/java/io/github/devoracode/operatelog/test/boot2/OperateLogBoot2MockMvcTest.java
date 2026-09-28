@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * Boot 2.x（javax 栈）端到端主用例：走完整 Spring MVC + AOP 链路，断言
  * {@link DefaultOperateLogHandler} 落地的 JSON 字段——注解语义、SpEL 及降级、脱敏、
- * 载荷防护（截断 / 忽略类型 / 坏元素）、嵌套上下文隔离、traceId 兜底、HTTP 采集与 trust-proxy。
+ * 载荷防护（截断 / 忽略类型 / 坏元素）、嵌套上下文隔离、traceId 透传、HTTP 采集与 trust-proxy。
  *
  * <p>断言通道：给 handler 的 logback logger 挂 {@link ListAppender}，解析 {@code operate-log=}
  * 前缀行。用例与 Boot 3 测试工程逐条对称：同一份 Starter 产物在两栈下行为必须一致。</p>
@@ -113,7 +113,8 @@ class OperateLogBoot2MockMvcTest {
         // recordRequest 默认 true：参数入日志；recordResponse 默认 false：响应体不记录
         assertTrue(text(record, "requestBody").contains("42"));
         assertTrue(isNull(record, "responseBody") || text(record, "responseBody").isEmpty());
-        assertNotNull(text(record, "traceId"));
+        // traceId 只透传 MDC，本用例未预置故为空；预置后的取值见 traceIdPickedUpFromMdc
+        assertTrue(isNull(record, "traceId"), String.valueOf(record.get("traceId")));
         assertEquals("operate-log-test", text(record, "application"));
         assertEquals("test", text(record, "environment"));
         // 不提供 HTTP 状态码（取舍见 HttpContextResolver）：字段必须整体缺席，而非「存在但为 null」
@@ -187,11 +188,11 @@ class OperateLogBoot2MockMvcTest {
     }
 
     @Test
-    void traceIdGeneratedWhenMdcAbsent() throws Exception {
-        // MDC 无值时必须自动生成，而不是留空：否则无链路追踪体系的宿主无法关联记录
+    void traceIdStaysNullWhenMdcAbsent() throws Exception {
+        // 只透传：MDC 无值时留 null，不自造 UUID，也不得往宿主 MDC 写任何东西
         this.mockMvc.perform(get("/demo/7"));
-        String traceId = text(lastRecord(), "traceId");
-        assertTrue(traceId.length() >= 16, "traceId 疑似未生成: " + traceId);
+        assertTrue(isNull(lastRecord(), "traceId"), String.valueOf(lastRecord().get("traceId")));
+        assertNull(MDC.get("traceId"), "traceId 不得写入宿主 MDC");
     }
 
     // ==================== SpEL ====================

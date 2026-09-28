@@ -28,7 +28,7 @@ public class OperateLogProperties {
     /** 应用版本号。 */
     private String version = "";
 
-    /** traceId 的 MDC key；取不到值时自动生成 UUID（Micrometer 常见 traceId，OTel 桥接常见 trace_id）。 */
+    /** traceId 的 MDC key；只读不写，取不到值时 traceId 为 null（Micrometer 常见 traceId，OTel 桥接常见 trace_id）。 */
     private String traceIdMdcKey = "traceId";
 
     /** HTTP 请求采集配置。 */

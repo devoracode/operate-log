@@ -13,7 +13,7 @@
 - **谁**在操作（操作人扩展点，可对接登录态 / Session / Token）
 - **操作了什么**（模块、操作、操作类型、业务 ID、SpEL 描述模板）
 - **怎么操作的**（HTTP 请求方法 / URL / 参数 / 响应 / 客户端 IP / User-Agent）
-- **结果如何**（成功 / 失败、耗时、异常类型与堆栈、traceId 全链路关联）
+- **结果如何**（成功 / 失败、耗时、异常类型与堆栈、traceId 透传宿主 MDC）
 
 默认以单行 JSON 输出到 SLF4J，业务方可通过扩展点替换为任意落地方式（数据库、MQ、ES、审计系统等）。
 
@@ -28,7 +28,7 @@
 | 记录时机 | `recordOn = ALWAYS / SUCCESS / ERROR` 直观过滤「仅成功 / 仅失败」，零 SpEL 开销，与 `condition` 取交集 |
 | SpEL 表达式 | 条件过滤、业务 ID 提取、描述模板（`#{...}` 模板语法） |
 | 敏感数据脱敏 | JSON 树递归脱敏 + query string 参数名掩码，字段名忽略大小写，脱敏字段与替换文本可配置 |
-| 全链路关联 | traceId 取 MDC，key 可配（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系）；MDC 缺失时生成 UUID 并**回写 MDC**，同一次请求内多条记录共享同一值 |
+| 全链路关联 | traceId **只从 MDC 透传，不自造**（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系）；MDC 无值时该字段为 `null`。本组件从不写入或清理宿主 MDC |
 | 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
 | 载荷防护 | `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
 | 自定义字段 | 业务方法与 Resolver 内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意字段（`extra`），无需扩展记录模型 |
@@ -79,8 +79,11 @@ public UserVO query(@PathVariable String userId) { ... }
 方法执行后，控制台即输出单行 JSON：
 
 ```text
-operate-log={"id":"...","traceId":"04d3122e-...","application":"order-app","environment":"prod","version":"1.0.0","module":"user","operation":"query","operationType":"QUERY","description":"查询用户 42","businessId":"42","operatorUserId":"10001","operatorUserAccount":"demo","operatorUserName":"演示用户","requestMethod":"GET","requestUrl":"http://localhost:8080/demo/42","requestUri":"/demo/42","requestQuery":null,"requestHeaders":null,"requestBody":"[\"42\"]","responseBody":"{\"userId\":\"42\",\"message\":\"ok\"}","clientIp":"127.0.0.1","userAgent":"curl/8.21.0","success":true,"costTime":4,"startTime":"...","endTime":"...","errorType":null,"errorMessage":null,"errorStack":null}
+operate-log={"id":"...","traceId":null,"application":"order-app","environment":"prod","version":"1.0.0","module":"user","operation":"query","operationType":"QUERY","description":"查询用户 42","businessId":"42","operatorUserId":"10001","operatorUserAccount":"demo","operatorUserName":"演示用户","requestMethod":"GET","requestUrl":"http://localhost:8080/demo/42","requestUri":"/demo/42","requestQuery":null,"requestHeaders":null,"requestBody":"[\"42\"]","responseBody":"{\"userId\":\"42\",\"message\":\"ok\"}","clientIp":"127.0.0.1","userAgent":"curl/8.21.0","success":true,"costTime":4,"startTime":"...","endTime":"...","errorType":null,"errorMessage":null,"errorStack":null}
 ```
+
+上例的 `traceId` 为 `null`：示例未接入链路追踪体系，MDC 里没有对应 key。若已接入并写入 MDC，
+该字段会是宿主的真实 traceId（见「配置参考」`operate-log.trace-id-mdc-key`）。
 
 ### 3. 对接操作人（推荐）
 
@@ -176,7 +179,7 @@ public void cancel(String orderNo) { ... }
 | `#success` | 是否成功（`boolean`） |
 | `#operator` | 当前操作人 `Operator`（可能为 `null`） |
 | `#http` | 当前 HTTP 上下文 `HttpContext`（非 Web 环境为 `null`） |
-| `#traceId` | 当前链路 traceId |
+| `#traceId` | 当前链路 traceId（宿主 MDC 无值时为 `null`） |
 | `#costTime` | 已耗时（`long`，毫秒） |
 | `#startTime` / `#endTime` | 起止时间 `Instant` |
 | `#annotation` | 当前方法上的 `@OperateLog` 注解实例 |
@@ -199,7 +202,7 @@ operate-log:
   application: order-app          # 应用名，写入日志（多应用聚合检索时区分来源）
   environment: prod               # 运行环境标识（dev / test / prod）
   version: 1.0.0                  # 应用版本号
-  trace-id-mdc-key: traceId       # traceId 的 MDC key（对齐追踪体系可改为 trace_id 等）
+  trace-id-mdc-key: traceId       # traceId 的 MDC key（对齐追踪体系可改为 trace_id 等），只读不写
   http:
     trust-proxy: false            # 是否信任反向代理头（X-Forwarded-For / X-Real-IP）
     capture-headers: false        # 是否采集完整请求头（写入 requestHeaders）
@@ -228,7 +231,7 @@ operate-log:
 | `operate-log.application` | `""` | 应用名 |
 | `operate-log.environment` | `""` | 环境标识 |
 | `operate-log.version` | `""` | 版本号 |
-| `operate-log.trace-id-mdc-key` | `traceId` | traceId 的 MDC key。与链路追踪体系的 MDC 写入 key 对齐（Micrometer/Sleuth 常见 `traceId`，OTel logback 桥接常见 `trace_id`）；MDC 取不到时生成 UUID 并回写该 key（收尾清理，只清理本组件写入的值），配置空白回退默认 key |
+| `operate-log.trace-id-mdc-key` | `traceId` | traceId 的 MDC key。与链路追踪体系的 MDC 写入 key 对齐（Micrometer/Sleuth 常见 `traceId`，OTel logback 桥接常见 `trace_id`）；**只读不写**，本组件不写入也不清理该 key，MDC 取不到值时 `traceId` 为 `null`，配置空白回退默认 key |
 | `operate-log.http.trust-proxy` | `false` | 信任代理头时，客户端 IP 解析顺序：`X-Forwarded-For`（取逗号链最后一个，即可信代理追加值）→ `X-Real-IP` → `getRemoteAddr()`；否则直接取 `getRemoteAddr()`。**仅在应用前存在单一可信代理、且该代理会清洗客户端头并追加转发链时开启**；多级代理需自行注册 `ClientIpResolver` |
 | `operate-log.http.capture-headers` | `false` | 开启后采集全部请求头写入 `requestHeaders`（JSON 对象）。注意头部可能含 Cookie 等敏感信息，开启后脱敏器会一并处理 |
 | `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段、`requestQuery`（按参数名匹配）、`errorMessage` / `errorStack`（纯文本子串匹配）。**不作用于 `extra`**——见字段表说明 |
@@ -247,7 +250,7 @@ operate-log:
 | 字段 | 来源 | 说明 |
 | --- | --- | --- |
 | `id` | 自动生成 | 日志记录 UUID |
-| `traceId` | MDC（key = `operate-log.trace-id-mdc-key`，默认 `traceId`）/ 自动生成 | 链路 ID：优先按配置 key 读 MDC（与 Sleuth / Micrometer / Zipkin 等打通）；MDC 缺失时由本组件生成 UUID 并**回写 MDC**，同一次请求内多个 `@OperateLog` 方法共享同一值（收尾清理，不覆盖宿主已有值）。未接入链路追踪体系时**不跨服务**，仅保证单次请求内关联 |
+| `traceId` | MDC（key = `operate-log.trace-id-mdc-key`，默认 `traceId`） | 链路 ID：**只从 MDC 透传，本组件不自造**。宿主 MDC 中该 key 有值则原样记录，缺失或为空白则为 `null`。需要非空请让追踪体系（Micrometer / Sleuth / OTel 等）在进入业务方法前写入 MDC；本组件不写入、不清理、不传播该 key |
 | `application` / `environment` / `version` | 配置 | 应用、环境、版本 |
 | `module` / `operation` / `operationType` | 注解 | 模块、操作、操作类型 |
 | `description` | 注解 + SpEL | 模板求值后的描述 |
@@ -282,7 +285,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 留一个「看起来像最终状态码、实际是过程快照」的字段，比没有更危险（审计上会被当成判据）。因此：
 
 - 审计判据请用 `success` + `errorType` / `errorMessage`（异常路径由切面如实捕获）；
-- 需要 HTTP 访问状态码时，请在宿主侧用 `OncePerRequestFilter` / `HandlerInterceptor#afterCompletion` **另记一行访问日志**，用本组件的 `traceId` / `id` 关联；
+- 需要 HTTP 访问状态码时，请在宿主侧用 `OncePerRequestFilter` / `HandlerInterceptor#afterCompletion` **另记一行访问日志**，用本组件的 `id` 关联（`traceId` 需宿主已接入追踪体系才有值）；
 - 非要把最终状态码写进同一条审计日志，只能用「延后落地」：自定义 `OperateLogHandler` 先入队、状态定稿后补写再刷出。Starter 不自带 Filter——那会把「单一环绕通知、日志同步落地」的架构换成 Filter + Aspect 双体系。
 
 ## 敏感数据脱敏
@@ -379,7 +382,7 @@ public SensitiveDataMasker operateLogSensitiveDataMasker(ObjectMapper objectMapp
         ▼
 OperateLogAspect @Around 拦截
         │
-        ├─► 解析 MDC traceId（key 可配，缺失生成 UUID）
+        ├─► 透传 MDC traceId（key 可配，无值则留 null）
         ├─► 绑定线程上下文（OperateLogContextHolder.bind）
         ├─► OperatorResolver 解析操作人（异常降级 null；resolve() 内可写 extra）
         ├─► HttpContextResolver#resolve() 采集 HTTP 请求侧信息：method/url/uri/query/headers/ip/UA
@@ -475,12 +478,16 @@ OperateLogAspect @Around 拦截
   两级通知的相对次序不由本组件保证。事务提交失败并回滚时，日志可能已写为 `success = true`。
   审计判据需要与事务结果一致时，请勿直接采信 `success`，应为事务通知显式指定更低 order
   （使其位于本切面外层），或改用自定义 `OperateLogHandler` 延后落地。
-- traceId **不跨服务**：未接入 Sleuth / Micrometer / OTel 等链路追踪体系时，本组件生成的 UUID
-  仅保证「同一次请求内多条记录共享」（生成后回写 MDC、收尾清理），不具备跨进程传递能力。
-- `extra` 与 traceId 基于 **ThreadLocal**：业务方法内切换线程的场景（`@Async`、自建线程池、
+- traceId **只透传，不自造**：本组件从不写入或清理宿主 MDC。宿主未接入 Sleuth / Micrometer /
+  OTel 等链路追踪体系、MDC 里没有对应 key 时，`traceId` 就是 `null`——本组件不会生成 UUID 充数，
+  因为自造值不参与任何分布式追踪，字段名叫 `traceId` 却与真实链路无关，比留空更容易误导排查。
+  需要该字段有值，请让追踪体系在进入业务方法前写入 MDC。
+- traceId **不跨服务**：即便有值，跨进程传递也完全依赖宿主追踪体系（Micrometer / Sleuth / OTel）
+  自己的传播能力，本组件不参与传播。
+- `extra` 与 traceId 都随线程走：业务方法内切换线程的场景（`@Async`、自建线程池、
   `CompletableFuture` 默认线程池等）不会自动传播——切线程后 `OperateLogContextHolder#putExtra`
-  写入的字段不再归属当前记录，traceId 关联同样失效。跨线程需要时自行传递上下文
-  （如以 `TaskDecorator` 包装任务，或在异步方法内重新 `putExtra`）。
+  写入的字段不再归属当前记录，MDC 也不会跟着切过去，traceId 关联同样失效。跨线程需要时自行传递
+  上下文（如以 `TaskDecorator` 包装任务，在异步方法内重新 `putExtra`；MDC 则由追踪体系自己传播）。
 
 > 已实现（原计划项）：载荷长度截断（`operate-log.payload.*`）、序列化忽略类型与逐元素降级、
 > `extra` 自定义字段通道、traceId MDC key 可配置（`trace-id-mdc-key`）、

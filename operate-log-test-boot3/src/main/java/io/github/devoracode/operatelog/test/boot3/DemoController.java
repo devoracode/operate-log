@@ -161,6 +161,20 @@ public class DemoController {
     public Map<String, Object> huge(@RequestBody Map<String, Object> body) {
         return body;
     }
+    /**
+     * 返回值侧的忽略类型防护：{@code byte[]} 在忽略名单内，开了 {@code recordResponse}
+     * 也不得以 base64 全文进日志。
+     */
+    @OperateLog(module = "demo", operation = "binary-response", recordResponse = true)
+    @GetMapping("/binary")
+    public byte[] binary() {
+        byte[] payload = new byte[48];
+        for (int i = 0; i < payload.length; i++) {
+            payload[i] = (byte) ('A' + (i % 26));
+        }
+        return payload;
+    }
+
     @OperateLog(module = "demo", operation = "fail-sensitive", type = OperateType.OTHER, recordOn = RecordOn.ERROR)
     @GetMapping("/fail-sensitive")
     public Map<String, Object> failSensitive() {

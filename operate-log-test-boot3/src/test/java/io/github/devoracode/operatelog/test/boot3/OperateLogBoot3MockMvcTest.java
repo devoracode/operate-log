@@ -255,6 +255,25 @@ class OperateLogBoot3MockMvcTest {
         assertTrue(flag(record, "success"));
     }
 
+    /**
+     * 返回值侧的忽略类型防护。参数侧的 {@code <IGNORED:...>} 是上一条用例覆盖的，
+     * 这里钉的是响应侧：开了 {@code recordResponse} 的二进制返回值不得被 Jackson 编成
+     * base64 全文落进 {@code responseBody}。
+     */
+    @Test
+    void ignoredResponseTypesReplacedWithPlaceholder() throws Exception {
+        this.mockMvc.perform(get("/demo/binary"));
+
+        Map<String, Object> record = lastRecord();
+        String responseBody = text(record, "responseBody");
+        // 返回值是字符串，序列化器会再包一层 JSON 引号，故此处用包含判断；
+        // 占位符的精确形态由 PayloadPolicy 层的单元用例钉住
+        assertTrue(responseBody.contains("<IGNORED:[B>"), responseBody);
+        // QUJDRE 是 "ABCDE" 的 base64 片段，泄漏时必然出现
+        assertFalse(responseBody.contains("QUJDRE"), "二进制返回值不得以 base64 进日志: " + responseBody);
+        assertTrue(flag(record, "success"));
+    }
+
     @Test
     void unserializableArgumentDegradesPerElement() throws Exception {
         this.mockMvc.perform(post("/demo/bad-arg?note=ok")

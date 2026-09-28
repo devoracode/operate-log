@@ -30,7 +30,7 @@
 | 敏感数据脱敏 | JSON 树递归脱敏 + query string 参数名掩码，字段名忽略大小写，脱敏字段与替换文本可配置 |
 | 全链路关联 | traceId **只从 MDC 透传，不自造**（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系）；MDC 无值时该字段为 `null`。本组件从不写入或清理宿主 MDC |
 | 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
-| 载荷防护 | `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器等不宜序列化的参数自动替换为 `<IGNORED:类型>` 占位符；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
+| 载荷防护 | `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器 / 字节数组等不宜序列化的值，在**入参与返回值两侧**都自动替换为 `<IGNORED:类型>` 占位符（`byte[]` 的占位符是 `<IGNORED:[B>`，JVM 数组类名没有结尾方括号）；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
 | 自定义字段 | 业务方法与 Resolver 内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意字段（`extra`），无需扩展记录模型 |
 | 宿主零污染 | 不注册任何 `ObjectMapper` bean，宿主 `spring.jackson.*` 与自定义 `Module` 不受影响；脱敏默认字段始终生效，配置只追加不移除 |
 | 可插拔扩展点 | Handler / 操作人解析 / HTTP 上下文解析 / 序列化 / 脱敏 / SpEL 引擎 / 载荷策略全部可替换（`@ConditionalOnMissingBean` 自动让位） |
@@ -241,7 +241,7 @@ operate-log:
 | `operate-log.payload.max-response-length` | `0` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
 | `operate-log.payload.max-error-length` | `0` | `errorStack` / `errorMessage` 最大字符数，`<=0` 不截断 |
 | `operate-log.payload.max-extra-length` | `0` | `extra` 整体 JSON 的最大字符数，`<=0` 不截断（与其他三项载荷上限一致）；超限时按单条实际 JSON 长度缩减：`String` 二分截短并保留 `...[truncated]` 标记，非 `String` 按实际大小移除，保留项类型不变；最终结果严格不超过上限 |
-| `operate-log.payload.ignore-types` | 17 项内置 | 在内置安全类型之外**追加**序列化时跳过的类型（全限定类名，父类/接口命中即算），替换为 `<IGNORED:类型简名>`；内置类型始终生效，无法通过配置移除，如需不同集合请注册自定义 `PayloadPolicy` bean。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
+| `operate-log.payload.ignore-types` | 17 项内置 | 在内置安全类型之外**追加**序列化时跳过的类型（全限定类名，父类/接口命中即算），入参与返回值两侧都生效，替换为 `<IGNORED:类型简名>`；内置类型始终生效，无法通过配置移除，如需不同集合请注册自定义 `PayloadPolicy` bean。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
 
 > **升级提示**：`payload.ignore-types` 已从“整体替换”改为“追加”，内置 17 项安全防护无法再通过配置移除；必须自定义完整集合时，请改注册 `PayloadPolicy` bean。同时，默认脱敏字段新增 `apiKey` / `privateKey` / `accessKey` / `secretKey` / `creditCard`，升级后这些字段将默认被掩码。
 

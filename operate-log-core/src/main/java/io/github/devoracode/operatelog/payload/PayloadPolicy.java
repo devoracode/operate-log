@@ -112,6 +112,26 @@ public class PayloadPolicy {
         return filtered;
     }
 
+    /**
+     * 命中「忽略类型」的单值替换为 {@code <IGNORED:命中类型短名>}，未命中原样返回同一实例。
+     *
+     * <p>返回值侧走本方法而非 {@link #filterArguments(Object[])}：{@code byte[]} 虽在忽略名单内，
+     * 但直接交给序列化器会被编成 base64 全文，二进制载荷将整份落进日志。</p>
+     *
+     * @param value 待过滤的单值，可为 {@code null}
+     * @return 占位符字符串，或未命中时返回 {@code value} 本身
+     */
+    public Object filterValue(Object value) {
+        if (value == null || this.ignoredTypes.isEmpty()) {
+            return value;
+        }
+        String ignoredType = resolveIgnoredType(value.getClass());
+        if (ignoredType == null) {
+            return value;
+        }
+        return "<IGNORED:" + ClassUtils.getShortName(ignoredType) + ">";
+    }
+
     public String truncateRequest(String value) {
         return truncate(value, this.maxRequestLength);
     }

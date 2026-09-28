@@ -135,6 +135,26 @@ class OperateLogBoot3StarterAssemblyTest {
                 });
     }
 
+    /**
+     * 忽略类型必须对单值同样生效：返回值走的是 {@code filterValue} 而非 {@code filterArguments}，
+     * 漏掉这条会让 {@code byte[]} 之类被 Jackson 编成 base64 全文进日志。
+     */
+    @Test
+    void ignoredTypesApplyToSingleValuesNotJustArgumentArrays() {
+        this.runner.run((context) -> {
+            PayloadPolicy policy = context.getBean(PayloadPolicy.class);
+
+            // JVM 的数组类名是 "[B"（无结尾方括号），占位符因此没有额外的 ]
+            assertEquals("<IGNORED:[B>", policy.filterValue(new byte[8]));
+            assertEquals("<IGNORED:InputStream>",
+                    policy.filterValue(new ByteArrayInputStream(new byte[0])));
+            assertNull(policy.filterValue(null));
+            // 未命中时必须原样返回同一个实例：过滤层不能改变交给序列化器的对象
+            String passthrough = "plain text";
+            assertSame(passthrough, policy.filterValue(passthrough));
+        });
+    }
+
     @Test
     void effectiveIgnoreTypesHelpersAreNotExposedAsConfigurationProperties() throws IOException {
         String metadata = StreamUtils.copyToString(

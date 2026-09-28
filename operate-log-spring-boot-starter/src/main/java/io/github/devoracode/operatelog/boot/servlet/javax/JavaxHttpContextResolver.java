@@ -1,5 +1,6 @@
 package io.github.devoracode.operatelog.boot.servlet.javax;
 
+import io.github.devoracode.operatelog.boot.servlet.ServletRequestUtils;
 import io.github.devoracode.operatelog.model.HttpContext;
 import io.github.devoracode.operatelog.resolver.ClientIpResolver;
 import io.github.devoracode.operatelog.resolver.HttpContextResolver;
@@ -7,8 +8,6 @@ import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
 import javax.servlet.http.HttpServletRequest;
-import java.util.Enumeration;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -39,7 +38,9 @@ public class JavaxHttpContextResolver implements HttpContextResolver {
             return null;
         }
         HttpServletRequest request = (HttpServletRequest) requestObject;
-        Map<String, String> headers = this.captureHeaders ? resolveHeaders(request) : null;
+        Map<String, String> headers = this.captureHeaders
+                ? ServletRequestUtils.resolveHeaders(request.getHeaderNames(), request::getHeaders)
+                : null;
         return HttpContext.builder()
                 .method(request.getMethod())
                 .url(request.getRequestURL().toString())
@@ -49,28 +50,5 @@ public class JavaxHttpContextResolver implements HttpContextResolver {
                 .userAgent(request.getHeader("User-Agent"))
                 .headers(headers)
                 .build();
-    }
-
-    private Map<String, String> resolveHeaders(HttpServletRequest request) {
-        Map<String, String> headers = new LinkedHashMap<>();
-        Enumeration<String> headerNames = request.getHeaderNames();
-        if (headerNames == null) {
-            return headers;
-        }
-        while (headerNames.hasMoreElements()) {
-            String headerName = headerNames.nextElement();
-            Enumeration<String> values = request.getHeaders(headerName);
-            StringBuilder sb = new StringBuilder();
-            boolean first = true;
-            while (values != null && values.hasMoreElements()) {
-                if (!first) {
-                    sb.append(", ");
-                }
-                sb.append(values.nextElement());
-                first = false;
-            }
-            headers.put(headerName, sb.toString());
-        }
-        return headers;
     }
 }

@@ -1,6 +1,6 @@
 package io.github.devoracode.operatelog.boot.servlet.javax;
 
-import io.github.devoracode.operatelog.boot.servlet.ServletIpUtils;
+import io.github.devoracode.operatelog.boot.servlet.ServletRequestUtils;
 import io.github.devoracode.operatelog.resolver.ClientIpResolver;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.web.context.request.RequestAttributes;
@@ -43,7 +43,7 @@ public class JavaxClientIpResolver implements ClientIpResolver {
                 if (forwardedFor.length() <= MAX_HEADER_LENGTH) {
                     int separator = forwardedFor.lastIndexOf(',');
                     String candidate = StringUtils.trim(forwardedFor.substring(separator + 1));
-                    if (ServletIpUtils.isValidIp(candidate)) {
+                    if (ServletRequestUtils.isValidIp(candidate)) {
                         return candidate;
                     }
                 }
@@ -51,7 +51,7 @@ public class JavaxClientIpResolver implements ClientIpResolver {
             String realIp = request.getHeader(REAL_IP);
             if (StringUtils.isNotBlank(realIp)) {
                 String trimmed = StringUtils.trim(realIp);
-                if (trimmed.length() <= MAX_HEADER_LENGTH && ServletIpUtils.isValidIp(trimmed)) {
+                if (trimmed.length() <= MAX_HEADER_LENGTH && ServletRequestUtils.isValidIp(trimmed)) {
                     return trimmed;
                 }
             }

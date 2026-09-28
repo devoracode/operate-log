@@ -1,7 +1,5 @@
 package io.github.devoracode.operatelog.aspect;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import io.github.devoracode.operatelog.annotation.OperateLog;
 import io.github.devoracode.operatelog.context.OperateLogContext;
 import io.github.devoracode.operatelog.context.OperateLogContextHolder;
@@ -37,6 +35,7 @@ import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 操作日志切面。
@@ -67,7 +66,8 @@ public class OperateLogAspect {
     private final boolean maskEnabled;
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
-    private final ClassValue<Cache<AnnotationCacheKey, Optional<OperateLog>>> annotationCaches;
+    private final int annotationCacheSize;
+    private final ClassValue<ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>>> annotationCaches;
 
     // 参数顺序即二进制签名：README 指引宿主自行 new 本切面以扩大切点，新增字段只能追加到末尾、
     // 禁止重排——改序会让已编译的宿主按位置静默错位传参
@@ -96,12 +96,11 @@ public class OperateLogAspect {
         this.maskEnabled = maskEnabled;
         this.payloadPolicy = payloadPolicy;
         this.traceIdMdcKey = traceIdMdcKey;
-        // ClassValue 生命周期跟随目标类；内层缓存上限按类计算。
-        final int cacheSize = Math.max(annotationCacheSize, 64);
-        this.annotationCaches = new ClassValue<Cache<AnnotationCacheKey, Optional<OperateLog>>>() {
+        this.annotationCacheSize = Math.max(annotationCacheSize, 64);
+        this.annotationCaches = new ClassValue<ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>>>() {
             @Override
-            protected Cache<AnnotationCacheKey, Optional<OperateLog>> computeValue(Class<?> type) {
-                return Caffeine.newBuilder().maximumSize(cacheSize).build();
+            protected ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>> computeValue(Class<?> type) {
+                return new ConcurrentHashMap<>();
             }
         };
     }
@@ -205,14 +204,23 @@ public class OperateLogAspect {
     private OperateLog findOperateLogCached(Method invocationMethod,
                                             Method targetMethod,
                                             Class<?> targetClass) {
-        Cache<AnnotationCacheKey, Optional<OperateLog>> annotationCache = this.annotationCaches.get(targetClass);
+        ConcurrentHashMap<AnnotationCacheKey, Optional<OperateLog>> annotationCache =
+                this.annotationCaches.get(targetClass);
         AnnotationCacheKey cacheKey = new AnnotationCacheKey(invocationMethod, targetClass);
-        Optional<OperateLog> cached = annotationCache.getIfPresent(cacheKey);
+        // value 包一层 Optional：ConcurrentHashMap 不接受 null value，而「查过且没有注解」
+        // 必须与「尚未查过」区分开，否则未标注方法每次调用都要重新反射查找。
+        Optional<OperateLog> cached = annotationCache.get(cacheKey);
         if (cached != null) {
             return cached.orElse(null);
         }
         OperateLog resolved = findOperateLog(invocationMethod, targetMethod, targetClass);
-        annotationCache.asMap().putIfAbsent(cacheKey, Optional.ofNullable(resolved));
+        // 判满即整表清空：本缓存只服务「目标类 × 被拦截方法」这一组有限键，预热后基本不再增长，
+        // 溢出本就罕见，整表清空的代价远低于为此引入带准入策略的第三方缓存。
+        // 并发下 size() 与 put 之间不原子，上界是尽力而为——与原先 maximumSize 的语义同级。
+        if (annotationCache.size() >= this.annotationCacheSize) {
+            annotationCache.clear();
+        }
+        annotationCache.putIfAbsent(cacheKey, Optional.ofNullable(resolved));
         return resolved;
     }
 

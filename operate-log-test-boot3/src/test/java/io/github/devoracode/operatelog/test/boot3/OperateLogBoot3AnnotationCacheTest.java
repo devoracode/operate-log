@@ -9,10 +9,11 @@ import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -31,31 +32,34 @@ class OperateLogBoot3AnnotationCacheTest {
         Object sameClass = classValues.get(String.class);
         Object otherClass = classValues.get(Integer.class);
 
-        assertTrue(first instanceof com.github.benmanes.caffeine.cache.Cache);
+        assertTrue(first instanceof Map, "单类注解缓存应为 Map: " + first);
         assertSame(first, sameClass);
         assertNotSame(first, otherClass);
     }
 
     @Test
-    void annotationCacheUsesCaffeineAndEvictsToConfiguredSize() throws Exception {
+    void aspectNoLongerReferencesCaffeine() {
+        for (Field field : OperateLogAspect.class.getDeclaredFields()) {
+            String declared = field.getGenericType().getTypeName();
+            assertFalse(declared.contains("caffeine"),
+                    "切面不应再依赖 Caffeine: " + field.getName() + " -> " + declared);
+        }
+    }
+
+    @Test
+    void annotationCacheNeverExceedsConfiguredSize() throws Exception {
         OperateLogAspect aspect = newAspect();
         Method lookup = lookupMethod();
-        Method[] methods = candidateMethods(Class.class);
-        assertTrue(methods.length > CACHE_CAPACITY,
+        assertTrue(candidateMethods(Class.class).length > CACHE_CAPACITY,
                 "需要足够多的 Method 作为单类冷缓存键");
         fillDistinctLookups(aspect, lookup, CACHE_CAPACITY, Class.class);
 
-        Object cache = annotationCache(aspect, Class.class);
-        Class<?> caffeineCacheType = caffeineCacheType();
-        caffeineCacheType.getMethod("cleanUp").invoke(cache);
-        int configuredSize = ((Number) caffeineCacheType.getMethod("estimatedSize").invoke(cache)).intValue();
-        assertTrue(configuredSize > 64 && configuredSize <= CACHE_CAPACITY,
-                "单类缓存应遵循高于下限的配置容量: " + configuredSize);
+        Map<?, ?> cache = annotationCache(aspect, Class.class);
+        // size() 是精确值，不存在 Caffeine 的 estimatedSize 与 cleanUp
+        assertEquals(CACHE_CAPACITY, cache.size(), "缓存已填满但未达到配置容量");
 
         fillDistinctLookups(aspect, lookup, OVERFLOW_LOOKUP_COUNT, Class.class);
-        caffeineCacheType.getMethod("cleanUp").invoke(cache);
-        int size = ((Number) caffeineCacheType.getMethod("estimatedSize").invoke(cache)).intValue();
-        assertTrue(size <= CACHE_CAPACITY, "Caffeine 缓存超过配置容量: " + size);
+        assertTrue(cache.size() <= CACHE_CAPACITY, "缓存超过配置容量: " + cache.size());
     }
 
     @Test
@@ -65,18 +69,17 @@ class OperateLogBoot3AnnotationCacheTest {
         Method unannotated = getClass().getDeclaredMethod("unannotatedMethod");
         assertNull(lookup.invoke(aspect, unannotated, unannotated, getClass()));
 
-        Object cache = annotationCache(aspect, getClass());
-        Class<?> caffeineCacheType = caffeineCacheType();
-        Map<?, ?> entries = (Map<?, ?>) caffeineCacheType.getMethod("asMap").invoke(cache);
+        Map<?, ?> cache = annotationCache(aspect, getClass());
         Object key = cacheKey(unannotated, getClass());
-        Object cached = entries.get(key);
+        Object cached = cache.get(key);
+        assertNotNull(cached, "未标注方法也应缓存，否则每次调用都要重新反射查找");
         assertTrue(cached instanceof Optional);
         assertFalse(((Optional<?>) cached).isPresent());
-        caffeineCacheType.getMethod("invalidate", Object.class).invoke(cache, key);
+        cache.remove(key);
 
-        assertFalse(entries.containsKey(key));
+        assertFalse(cache.containsKey(key));
         assertNull(lookup.invoke(aspect, unannotated, unannotated, getClass()));
-        assertTrue(entries.containsKey(key));
+        assertTrue(cache.containsKey(key));
     }
 
     private void unannotatedMethod() {
@@ -124,8 +127,8 @@ class OperateLogBoot3AnnotationCacheTest {
         return (ClassValue<?>) field.get(aspect);
     }
 
-    private static Object annotationCache(OperateLogAspect aspect, Class<?> targetClass) throws Exception {
-        return annotationCaches(aspect).get(targetClass);
+    private static Map<?, ?> annotationCache(OperateLogAspect aspect, Class<?> targetClass) throws Exception {
+        return (Map<?, ?>) annotationCaches(aspect).get(targetClass);
     }
 
     private static Object cacheKey(Method method, Class<?> targetClass) throws Exception {
@@ -134,14 +137,5 @@ class OperateLogBoot3AnnotationCacheTest {
         Constructor<?> constructor = keyType.getDeclaredConstructor(Method.class, Class.class);
         constructor.setAccessible(true);
         return constructor.newInstance(method, targetClass);
-    }
-
-    private static Class<?> caffeineCacheType() throws Exception {
-        try {
-            return Class.forName("com.github.benmanes.caffeine.cache.Cache");
-        } catch (ClassNotFoundException ex) {
-            fail("OperateLogAspect 必须使用 Caffeine Cache");
-            return null;
-        }
     }
 }

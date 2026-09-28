@@ -9,7 +9,6 @@ import io.github.devoracode.operatelog.handler.OperateLogHandler;
 import io.github.devoracode.operatelog.model.HttpContext;
 import io.github.devoracode.operatelog.model.OperateLogRecord;
 import io.github.devoracode.operatelog.model.Operator;
-import io.github.devoracode.operatelog.model.RecordOn;
 import io.github.devoracode.operatelog.payload.PayloadPolicy;
 import io.github.devoracode.operatelog.resolver.HttpContextResolver;
 import io.github.devoracode.operatelog.resolver.OperatorResolver;
@@ -28,7 +27,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.aop.support.AopUtils;
-import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.core.annotation.Order;
 import org.springframework.util.ClassUtils;
@@ -38,12 +36,7 @@ import java.io.StringWriter;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.PriorityQueue;
-import java.util.UUID;
+import java.util.*;
 
 /**
  * 操作日志切面。
@@ -57,7 +50,7 @@ import java.util.UUID;
  * 回滚时日志仍记为成功。要求审计一致需让事务通知位于外层，或改用延后落地的 {@code OperateLogHandler}。</p>
  */
 @Aspect
-@Order(Ordered.LOWEST_PRECEDENCE)
+@Order
 public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
@@ -142,7 +135,6 @@ public class OperateLogAspect {
             return joinPoint.proceed();
         }
         final OperateLogContext context;
-        final TraceId traceId;
         try {
             context = new OperateLogContext(annotation,
                     joinPoint,
@@ -150,8 +142,7 @@ public class OperateLogAspect {
                     joinPoint.getTarget(),
                     joinPoint.getArgs());
             context.setStartTime(Instant.now());
-            traceId = resolveTraceId();
-            context.setTraceId(traceId.value());
+            context.setTraceId(resolveTraceId());
         } catch (Throwable ex) {
             LOGGER.warn("operate-log: context initialization failed, logging skipped.", ex);
             return joinPoint.proceed();
@@ -176,10 +167,6 @@ public class OperateLogAspect {
             } finally {
                 // 嵌套场景恢复外层上下文，避免 ThreadLocal 泄漏与外层丢数据
                 restorePreviousContext(previous);
-                // 只清理本组件生成的 traceId，宿主 MDC 值不动
-                if (traceId.generated()) {
-                    clearTraceIdIfUnchanged(traceId.value(), traceId.mdcKey());
-                }
             }
         }
     }
@@ -276,70 +263,14 @@ public class OperateLogAspect {
         return null;
     }
 
-    private TraceId resolveTraceId() {
+    private String resolveTraceId() {
         String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
-        String generated = null;
         try {
             String existing = MDC.get(mdcKey);
-            if (StringUtils.isNotBlank(existing)) {
-                return new TraceId(existing, false, mdcKey);
-            }
-            generated = UUID.randomUUID().toString();
-            MDC.put(mdcKey, generated);
-            return new TraceId(generated, true, mdcKey);
+            return StringUtils.isNotBlank(existing) ? existing : null;
         } catch (Throwable ex) {
-            // MDC.put 可能写入后才抛；仅当当前值仍等于生成值时清理，避免覆盖业务重写。
-            if (generated != null) {
-                clearTraceIdIfUnchanged(generated, mdcKey);
-            }
-            LOGGER.warn("operate-log: traceId resolution failed, degraded to generated UUID.", ex);
-            return new TraceId(UUID.randomUUID().toString(), false, mdcKey);
-        }
-    }
-
-    private void clearTraceIdIfUnchanged(String expectedValue, String mdcKey) {
-        if (expectedValue == null) {
-            return;
-        }
-        try {
-            if (expectedValue.equals(MDC.get(mdcKey))) {
-                clearTraceIdQuietly(mdcKey);
-            }
-        } catch (Throwable ex) {
-            LOGGER.warn("operate-log: traceId comparison failed, MDC entry left unchanged.", ex);
-        }
-    }
-
-    private void clearTraceIdQuietly(String mdcKey) {
-        try {
-            MDC.remove(mdcKey);
-        } catch (Throwable ex) {
-            LOGGER.warn("operate-log: traceId cleanup failed, MDC entry may remain on this thread.",
-                    ex);
-        }
-    }
-
-    private static final class TraceId {
-        private final String value;
-        private final boolean generated;
-        private final String mdcKey;
-
-        private TraceId(String value, boolean generated, String mdcKey) {
-            this.value = value;
-            this.generated = generated;
-            this.mdcKey = mdcKey;
-        }
-
-        private String value() {
-            return this.value;
-        }
-
-        private boolean generated() {
-            return this.generated;
-        }
-
-        private String mdcKey() {
-            return this.mdcKey;
+            LOGGER.warn("operate-log: traceId read failed, degraded to null.", ex);
+            return null;
         }
     }
 

@@ -17,14 +17,14 @@ import javax.servlet.http.HttpServletRequest;
  * {@code getRequest()} 的返回类型在 Spring 5.3（javax）与 6（jakarta）描述符不同，
  * 跨版本调用会抛 {@code NoSuchMethodError}；{@code RequestAttributes} 签名两代一致。</p>
  */
-public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
+public class JavaxClientIpResolver implements ClientIpResolver {
     private static final String FORWARDED_FOR = "X-Forwarded-For";
     private static final String REAL_IP = "X-Real-IP";
     /** 代理头长度上限：超长头几乎必为伪造 / 溢出攻击载荷，直接判为不可信。 */
     private static final int MAX_HEADER_LENGTH = 256;
     private final boolean trustProxy;
 
-    public OperateLogJavaxClientIpResolver(boolean trustProxy) {
+    public JavaxClientIpResolver(boolean trustProxy) {
         this.trustProxy = trustProxy;
     }
 
@@ -59,57 +59,106 @@ public class OperateLogJavaxClientIpResolver implements ClientIpResolver {
         return request.getRemoteAddr();
     }
 
-    /** 校验 IP 字面量：无 {@code ':'} 按 IPv4（四段十进制 0–255），含 {@code ':'} 按 IPv6（十六进制与冒号，至多一处 {@code ::}，可带方括号）。 */
+    /** 严格校验 IPv4 / IPv6 字面量，不触发 DNS 解析。 */
     private static boolean isValidIp(String value) {
         if (StringUtils.isBlank(value)) {
             return false;
         }
         if (value.indexOf(':') < 0) {
-            String[] parts = value.split("\\.");
-            if (parts.length != 4) {
-                return false;
-            }
-            for (String part : parts) {
-                if (part.isEmpty() || part.length() > 3) {
-                    return false;
-                }
-                for (int i = 0; i < part.length(); i++) {
-                    char c = part.charAt(i);
-                    if (c < '0' || c > '9') {
-                        return false;
-                    }
-                }
-                int v = Integer.parseInt(part);
-                if (v < 0 || v > 255) {
-                    return false;
-                }
-            }
-            return true;
+            return isValidIpv4(value);
         }
-        String s = value;
-        if (s.startsWith("[") && s.endsWith("]")) {
-            s = s.substring(1, s.length() - 1);
+        String literal = value;
+        if (literal.startsWith("[") && literal.endsWith("]")) {
+            literal = literal.substring(1, literal.length() - 1);
         }
-        if (s.isEmpty()) {
+        if (literal.isEmpty() || literal.indexOf('%') >= 0) {
             return false;
         }
-        int doubleColonCount = 0;
-        int idx = 0;
-        while (idx < s.length()) {
-            int next = s.indexOf("::", idx);
-            if (next >= 0) {
-                doubleColonCount++;
-                idx = next + 2;
+        int compression = literal.indexOf("::");
+        if (compression >= 0 && compression != literal.lastIndexOf("::")) {
+            return false;
+        }
+        if (compression < 0 && (literal.startsWith(":") || literal.endsWith(":"))) {
+            return false;
+        }
+        String left = compression < 0 ? literal : literal.substring(0, compression);
+        String right = compression < 0 ? "" : literal.substring(compression + 2);
+        if (compression >= 0 && (left.endsWith(":") || right.startsWith(":"))) {
+            return false;
+        }
+        int leftUnits = countIpv6Units(left, compression < 0);
+        int rightUnits = countIpv6Units(right, compression >= 0);
+        if (leftUnits < 0 || rightUnits < 0) {
+            return false;
+        }
+        int units = leftUnits + rightUnits;
+        return compression < 0 ? units == 8 : units <= 7;
+    }
+
+    private static int countIpv6Units(String part, boolean allowIpv4Tail) {
+        if (part.isEmpty()) {
+            return 0;
+        }
+        int units = 0;
+        int start = 0;
+        while (start <= part.length()) {
+            int separator = part.indexOf(':', start);
+            int end = separator < 0 ? part.length() : separator;
+            String group = part.substring(start, end);
+            if (group.isEmpty()) {
+                return -1;
+            }
+            if (group.indexOf('.') >= 0) {
+                if (!allowIpv4Tail || separator >= 0 || !isValidIpv4(group)) {
+                    return -1;
+                }
+                units += 2;
             } else {
+                if (!isIpv6Group(group)) {
+                    return -1;
+                }
+                units++;
+            }
+            if (separator < 0) {
                 break;
             }
+            start = separator + 1;
         }
-        if (doubleColonCount > 1) {
+        return units;
+    }
+
+    private static boolean isIpv6Group(String value) {
+        if (value.isEmpty() || value.length() > 4) {
             return false;
         }
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || c == ':' || c == '.')) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+                    || (c >= 'A' && c <= 'F'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isValidIpv4(String value) {
+        String[] parts = value.split("\\.", -1);
+        if (parts.length != 4) {
+            return false;
+        }
+        for (String part : parts) {
+            if (part.isEmpty() || part.length() > 3) {
+                return false;
+            }
+            int number = 0;
+            for (int i = 0; i < part.length(); i++) {
+                char c = part.charAt(i);
+                if (c < '0' || c > '9') {
+                    return false;
+                }
+                number = number * 10 + c - '0';
+            }
+            if (number > 255) {
                 return false;
             }
         }

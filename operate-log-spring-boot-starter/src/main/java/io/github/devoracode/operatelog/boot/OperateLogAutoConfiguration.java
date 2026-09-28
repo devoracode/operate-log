@@ -5,10 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.github.devoracode.operatelog.aspect.OperateLogAspect;
-import io.github.devoracode.operatelog.boot.servlet.jakarta.OperateLogJakartaClientIpResolver;
-import io.github.devoracode.operatelog.boot.servlet.jakarta.OperateLogJakartaHttpContextResolver;
-import io.github.devoracode.operatelog.boot.servlet.javax.OperateLogJavaxClientIpResolver;
-import io.github.devoracode.operatelog.boot.servlet.javax.OperateLogJavaxHttpContextResolver;
+import io.github.devoracode.operatelog.boot.servlet.jakarta.JakartaClientIpResolver;
+import io.github.devoracode.operatelog.boot.servlet.jakarta.JakartaHttpContextResolver;
+import io.github.devoracode.operatelog.boot.servlet.javax.JavaxClientIpResolver;
+import io.github.devoracode.operatelog.boot.servlet.javax.JavaxHttpContextResolver;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import io.github.devoracode.operatelog.handler.OperateLogHandler;
 import io.github.devoracode.operatelog.model.HttpContext;
@@ -59,7 +59,7 @@ public class OperateLogAutoConfiguration {
      */
     @Configuration(proxyBeanMethods = false)
     static class CommonConfiguration {
-        // 注解缓存只作热路径优化，容量超限后重新解析，不影响业务结果。
+        // 注解缓存按目标类关联，只作热路径优化；单类缓存超限后重新解析，不影响业务结果。
         private static final int ANNOTATION_CACHE_SIZE = 4096;
 
         private final ObjectProvider<ObjectMapper> objectMapperProvider;
@@ -204,7 +204,7 @@ public class OperateLogAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(ClientIpResolver.class)
         public ClientIpResolver operateLogJakartaClientIpResolver(OperateLogProperties properties) {
-            return new OperateLogJakartaClientIpResolver(properties.getHttp().isTrustProxy());
+            return new JakartaClientIpResolver(properties.getHttp().isTrustProxy());
         }
 
         /**
@@ -214,7 +214,7 @@ public class OperateLogAutoConfiguration {
         @ConditionalOnMissingBean(HttpContextResolver.class)
         public HttpContextResolver operateLogJakartaHttpContextResolver(ClientIpResolver clientIpResolver,
                                                                         OperateLogProperties properties) {
-            return new OperateLogJakartaHttpContextResolver(clientIpResolver,
+            return new JakartaHttpContextResolver(clientIpResolver,
                     properties.getHttp().isCaptureHeaders());
         }
     }
@@ -233,7 +233,7 @@ public class OperateLogAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(ClientIpResolver.class)
         public ClientIpResolver operateLogJavaxClientIpResolver(OperateLogProperties properties) {
-            return new OperateLogJavaxClientIpResolver(properties.getHttp().isTrustProxy());
+            return new JavaxClientIpResolver(properties.getHttp().isTrustProxy());
         }
 
         /**
@@ -243,7 +243,7 @@ public class OperateLogAutoConfiguration {
         @ConditionalOnMissingBean(HttpContextResolver.class)
         public HttpContextResolver operateLogJavaxHttpContextResolver(ClientIpResolver clientIpResolver,
                                                                       OperateLogProperties properties) {
-            return new OperateLogJavaxHttpContextResolver(clientIpResolver,
+            return new JavaxHttpContextResolver(clientIpResolver,
                     properties.getHttp().isCaptureHeaders());
         }
     }
@@ -261,12 +261,7 @@ public class OperateLogAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(ClientIpResolver.class)
         public ClientIpResolver operateLogFallbackClientIpResolver() {
-            return new ClientIpResolver() {
-                @Override
-                public String resolve() {
-                    return null;
-                }
-            };
+            return () -> null;
         }
 
         /**
@@ -275,12 +270,7 @@ public class OperateLogAutoConfiguration {
         @Bean
         @ConditionalOnMissingBean(HttpContextResolver.class)
         public HttpContextResolver operateLogFallbackHttpContextResolver() {
-            return new HttpContextResolver() {
-                @Override
-                public HttpContext resolve() {
-                    return null;
-                }
-            };
+            return () -> null;
         }
     }
 }

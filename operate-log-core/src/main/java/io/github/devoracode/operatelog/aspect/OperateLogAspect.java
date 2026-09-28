@@ -74,7 +74,7 @@ public class OperateLogAspect {
     private final boolean maskEnabled;
     private final PayloadPolicy payloadPolicy;
     private final String traceIdMdcKey;
-    private final Cache<AnnotationCacheKey, Optional<OperateLog>> annotationCache;
+    private final ClassValue<Cache<AnnotationCacheKey, Optional<OperateLog>>> annotationCaches;
 
     // 参数顺序即二进制签名：README 指引宿主自行 new 本切面以扩大切点，新增字段只能追加到末尾、
     // 禁止重排——改序会让已编译的宿主按位置静默错位传参
@@ -103,9 +103,14 @@ public class OperateLogAspect {
         this.maskEnabled = maskEnabled;
         this.payloadPolicy = payloadPolicy;
         this.traceIdMdcKey = traceIdMdcKey;
-        this.annotationCache = Caffeine.newBuilder()
-                .maximumSize(Math.max(annotationCacheSize, 64))
-                .build();
+        // ClassValue 生命周期跟随目标类；内层缓存上限按类计算。
+        final int cacheSize = Math.max(annotationCacheSize, 64);
+        this.annotationCaches = new ClassValue<Cache<AnnotationCacheKey, Optional<OperateLog>>>() {
+            @Override
+            protected Cache<AnnotationCacheKey, Optional<OperateLog>> computeValue(Class<?> type) {
+                return Caffeine.newBuilder().maximumSize(cacheSize).build();
+            }
+        };
     }
 
     /**
@@ -173,7 +178,7 @@ public class OperateLogAspect {
                 restorePreviousContext(previous);
                 // 只清理本组件生成的 traceId，宿主 MDC 值不动
                 if (traceId.generated()) {
-                    clearTraceIdQuietly(traceId.mdcKey());
+                    clearTraceIdIfUnchanged(traceId.value(), traceId.mdcKey());
                 }
             }
         }
@@ -213,13 +218,14 @@ public class OperateLogAspect {
     private OperateLog findOperateLogCached(Method invocationMethod,
                                             Method targetMethod,
                                             Class<?> targetClass) {
+        Cache<AnnotationCacheKey, Optional<OperateLog>> annotationCache = this.annotationCaches.get(targetClass);
         AnnotationCacheKey cacheKey = new AnnotationCacheKey(invocationMethod, targetClass);
-        Optional<OperateLog> cached = this.annotationCache.getIfPresent(cacheKey);
+        Optional<OperateLog> cached = annotationCache.getIfPresent(cacheKey);
         if (cached != null) {
             return cached.orElse(null);
         }
         OperateLog resolved = findOperateLog(invocationMethod, targetMethod, targetClass);
-        this.annotationCache.asMap().putIfAbsent(cacheKey, Optional.ofNullable(resolved));
+        annotationCache.asMap().putIfAbsent(cacheKey, Optional.ofNullable(resolved));
         return resolved;
     }
 
@@ -272,24 +278,35 @@ public class OperateLogAspect {
 
     private TraceId resolveTraceId() {
         String mdcKey = StringUtils.defaultIfBlank(this.traceIdMdcKey, DEFAULT_TRACE_ID_MDC_KEY);
-        boolean mayHaveWritten = false;
+        String generated = null;
         try {
             String existing = MDC.get(mdcKey);
             if (StringUtils.isNotBlank(existing)) {
                 return new TraceId(existing, false, mdcKey);
             }
-            String generated = UUID.randomUUID().toString();
-            mayHaveWritten = true;
+            generated = UUID.randomUUID().toString();
             MDC.put(mdcKey, generated);
             return new TraceId(generated, true, mdcKey);
         } catch (Throwable ex) {
-            // 走到写入分支才清理：此时已确认原值为空，不会误删宿主 MDC。MDC.put 可能写入后才抛，
-            // 降级值不能谎报 generated=false，否则半写的 traceId 会留在复用线程上。
-            if (mayHaveWritten) {
-                clearTraceIdQuietly(mdcKey);
+            // MDC.put 可能写入后才抛；仅当当前值仍等于生成值时清理，避免覆盖业务重写。
+            if (generated != null) {
+                clearTraceIdIfUnchanged(generated, mdcKey);
             }
             LOGGER.warn("operate-log: traceId resolution failed, degraded to generated UUID.", ex);
             return new TraceId(UUID.randomUUID().toString(), false, mdcKey);
+        }
+    }
+
+    private void clearTraceIdIfUnchanged(String expectedValue, String mdcKey) {
+        if (expectedValue == null) {
+            return;
+        }
+        try {
+            if (expectedValue.equals(MDC.get(mdcKey))) {
+                clearTraceIdQuietly(mdcKey);
+            }
+        } catch (Throwable ex) {
+            LOGGER.warn("operate-log: traceId comparison failed, MDC entry left unchanged.", ex);
         }
     }
 

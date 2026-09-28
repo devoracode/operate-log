@@ -1,6 +1,7 @@
 package io.github.devoracode.operatelog.context;
 
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.util.CollectionUtils;
 
 import java.util.Map;
 
@@ -34,14 +35,14 @@ public final class OperateLogContextHolder {
     }
 
     public static void putExtras(Map<String, ?> extras) {
-        if (extras == null || extras.isEmpty()) {
+        if (CollectionUtils.isEmpty(extras)) {
             return;
         }
         OperateLogContext context = HOLDER.get();
         if (context == null) {
             return;
         }
-        context.getExtra().putAll(extras);
+        extras.forEach(OperateLogContextHolder::putExtra);
     }
 
     public static void bind(OperateLogContext context) {

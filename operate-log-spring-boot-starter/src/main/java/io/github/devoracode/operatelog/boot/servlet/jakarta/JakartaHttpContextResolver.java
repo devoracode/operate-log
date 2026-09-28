@@ -1,4 +1,4 @@
-package io.github.devoracode.operatelog.boot.servlet.javax;
+package io.github.devoracode.operatelog.boot.servlet.jakarta;
 
 import io.github.devoracode.operatelog.model.HttpContext;
 import io.github.devoracode.operatelog.resolver.ClientIpResolver;
@@ -6,23 +6,23 @@ import io.github.devoracode.operatelog.resolver.HttpContextResolver;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * javax 栈（Boot 2.x）HTTP 上下文解析器：从 {@code RequestContextHolder} 取宿主 request，
+ * jakarta 栈（Boot 3.x）HTTP 上下文解析器：从 {@code RequestContextHolder} 取宿主 request，
  * 采集请求侧快照。
  *
  * <p>只读 request，不采集 response 状态码。</p>
  */
-public class OperateLogJavaxHttpContextResolver implements HttpContextResolver {
+public class JakartaHttpContextResolver implements HttpContextResolver {
     /** 本栈 IP 解析器，可与本类共享同一条 request 通道。 */
     private final ClientIpResolver clientIpResolver;
     private final boolean captureHeaders;
 
-    public OperateLogJavaxHttpContextResolver(ClientIpResolver clientIpResolver, boolean captureHeaders) {
+    public JakartaHttpContextResolver(ClientIpResolver clientIpResolver, boolean captureHeaders) {
         this.clientIpResolver = clientIpResolver;
         this.captureHeaders = captureHeaders;
     }
@@ -33,7 +33,7 @@ public class OperateLogJavaxHttpContextResolver implements HttpContextResolver {
         if (attributes == null) {
             return null;
         }
-        // 二进制兼容通道获取宿主真实 request，再收窄到 javax 栈类型
+        // 二进制兼容通道获取宿主真实 request，再收窄到 jakarta 栈类型
         Object requestObject = attributes.resolveReference(RequestAttributes.REFERENCE_REQUEST);
         if (!(requestObject instanceof HttpServletRequest)) {
             return null;

@@ -3,8 +3,8 @@ package io.github.devoracode.operatelog.test.boot3;
 import io.github.devoracode.operatelog.annotation.OperateLog;
 import io.github.devoracode.operatelog.aspect.OperateLogAspect;
 import io.github.devoracode.operatelog.boot.OperateLogAutoConfiguration;
-import io.github.devoracode.operatelog.boot.servlet.jakarta.OperateLogJakartaClientIpResolver;
-import io.github.devoracode.operatelog.boot.servlet.jakarta.OperateLogJakartaHttpContextResolver;
+import io.github.devoracode.operatelog.boot.servlet.jakarta.JakartaClientIpResolver;
+import io.github.devoracode.operatelog.boot.servlet.jakarta.JakartaHttpContextResolver;
 import io.github.devoracode.operatelog.model.HttpContext;
 import io.github.devoracode.operatelog.model.OperateLogRecord;
 import io.github.devoracode.operatelog.payload.PayloadPolicy;
@@ -52,8 +52,8 @@ class OperateLogBoot3StarterAssemblyTest {
             // 一个宿主只能有一套实现：两套同时出现说明互斥条件退化成了「bean 方法顺序」
             assertEquals(1, context.getBeansOfType(HttpContextResolver.class).size());
             assertEquals(1, context.getBeansOfType(ClientIpResolver.class).size());
-            assertTrue(context.getBean(HttpContextResolver.class) instanceof OperateLogJakartaHttpContextResolver);
-            assertTrue(context.getBean(ClientIpResolver.class) instanceof OperateLogJakartaClientIpResolver);
+            assertTrue(context.getBean(HttpContextResolver.class) instanceof JakartaHttpContextResolver);
+            assertTrue(context.getBean(ClientIpResolver.class) instanceof JakartaClientIpResolver);
             assertTrue(context.getBeanNamesForType(OperateLogAspect.class).length == 1);
         });
     }
@@ -69,7 +69,7 @@ class OperateLogBoot3StarterAssemblyTest {
                     assertTrue(resolver.resolve() == null, "兜底实现必须返回 null");
                     assertTrue(context.getBean(ClientIpResolver.class).resolve() == null, "兜底 IP 必须为 null");
                     // 兜底实现不得是任一栈的类（否则非 Web 应用会因类加载失败而启动不了）
-                    assertTrue(!(resolver instanceof OperateLogJakartaHttpContextResolver));
+                    assertTrue(!(resolver instanceof JakartaHttpContextResolver));
                     assertTrue(context.getBeansOfType(OperateLogAspect.class).size() == 1);
                 });
     }
@@ -97,7 +97,7 @@ class OperateLogBoot3StarterAssemblyTest {
             assertSame(custom, context.getBean(HttpContextResolver.class));
             assertEquals("/from-user-bean", context.getBean(HttpContextResolver.class).resolve().getUri());
             // 用户只覆盖 HttpContextResolver 时，栈内 ClientIpResolver 仍需提供，否则注入失败
-            assertTrue(context.getBean(ClientIpResolver.class) instanceof OperateLogJakartaClientIpResolver);
+            assertTrue(context.getBean(ClientIpResolver.class) instanceof JakartaClientIpResolver);
         });
     }
 

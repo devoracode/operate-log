@@ -1,6 +1,6 @@
 package io.github.devoracode.operatelog.test.boot3;
 
-import io.github.devoracode.operatelog.boot.servlet.jakarta.OperateLogJakartaClientIpResolver;
+import io.github.devoracode.operatelog.boot.servlet.jakarta.JakartaClientIpResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -24,7 +24,7 @@ class OperateLogBoot3ClientIpResolverTest {
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
         assertEquals("203.0.113.7",
-                new OperateLogJakartaClientIpResolver(true).resolve());
+                new JakartaClientIpResolver(true).resolve());
     }
 
     @Test
@@ -35,7 +35,7 @@ class OperateLogBoot3ClientIpResolverTest {
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
         assertEquals("10.0.0.12",
-                new OperateLogJakartaClientIpResolver(true).resolve());
+                new JakartaClientIpResolver(true).resolve());
     }
 
     @Test
@@ -47,7 +47,46 @@ class OperateLogBoot3ClientIpResolverTest {
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
         assertEquals("203.0.113.7",
-                new OperateLogJakartaClientIpResolver(true).resolve());
+                new JakartaClientIpResolver(true).resolve());
+    }
+
+    @Test
+    void rejectsStructurallyInvalidIpv6Values() {
+        String[] candidates = {
+                ":", ":::", "1:::2",
+                "1:2:3:4:5:6:7:8:9:a:b:c:d:e:f:1:2",
+                "1:2:3:4:5:6:7", "1::2:3:4:5:6:7:8",
+                "192.0.2.1::", "192.0.2.1::1", "::192.0.2.1:1",
+                "1::2::3", ":1", "1:", "::ffff:192.0.2.999", "::1%eth0"
+        };
+        for (String candidate : candidates) {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.setRemoteAddr("10.0.0.12");
+            request.addHeader("X-Forwarded-For", candidate);
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+            assertEquals("10.0.0.12",
+                    new JakartaClientIpResolver(true).resolve(), candidate);
+        }
+    }
+
+    @Test
+    void acceptsStructurallyValidIpv6Values() {
+        String[] candidates = {
+                "2001:db8::1", "::1", "1::", "::",
+                "2001:db8:0:1:1:1:1:1", "::ffff:192.0.2.128",
+                "1:2:3:4:5::6:7", "1:2:3:4:5:6:192.0.2.1",
+                "[2001:db8::1]"
+        };
+        for (String candidate : candidates) {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.setRemoteAddr("10.0.0.12");
+            request.addHeader("X-Forwarded-For", candidate);
+            RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+            assertEquals(candidate,
+                    new JakartaClientIpResolver(true).resolve());
+        }
     }
 
     @Test
@@ -57,14 +96,14 @@ class OperateLogBoot3ClientIpResolverTest {
         request.addHeader("X-Forwarded-For", "not-an-ip");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
         assertEquals("192.0.2.10",
-                new OperateLogJakartaClientIpResolver(true).resolve());
+                new JakartaClientIpResolver(true).resolve());
 
         request = new MockHttpServletRequest();
         request.setRemoteAddr("10.0.0.12");
         request.addHeader("X-Forwarded-For", new String(new char[300]).replace('\0', '1'));
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
         assertEquals("10.0.0.12",
-                new OperateLogJakartaClientIpResolver(true).resolve());
+                new JakartaClientIpResolver(true).resolve());
     }
 
     @Test
@@ -73,6 +112,6 @@ class OperateLogBoot3ClientIpResolverTest {
         request.setRemoteAddr("192.0.2.10");
         request.addHeader("X-Forwarded-For", "203.0.113.7");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
-        assertEquals("192.0.2.10", new OperateLogJakartaClientIpResolver(false).resolve());
+        assertEquals("192.0.2.10", new JakartaClientIpResolver(false).resolve());
     }
 }

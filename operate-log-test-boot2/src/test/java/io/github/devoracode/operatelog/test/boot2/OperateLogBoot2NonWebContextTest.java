@@ -4,6 +4,8 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import io.github.devoracode.operatelog.aspect.OperateLogAspect;
+import io.github.devoracode.operatelog.context.OperateLogContext;
+import io.github.devoracode.operatelog.context.OperateLogContextHolder;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import io.github.devoracode.operatelog.model.HttpContext;
 import io.github.devoracode.operatelog.resolver.ClientIpResolver;
@@ -16,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static io.github.devoracode.operatelog.test.boot2.LogRecords.text;
@@ -97,6 +100,25 @@ class OperateLogBoot2NonWebContextTest {
         assertFalse(has(record, "httpStatus"), "httpStatus 已从日志模型中移除: " + record);
         // 业务方法返回值不受影响
         assertEquals("extra-channel", text(child(record, "extra"), "demo"));
+    }
+
+    @Test
+    void putExtrasUsesPutExtraKeyValidation() {
+        OperateLogContext context = new OperateLogContext(null, null, null, null, new Object[0]);
+        OperateLogContextHolder.bind(context);
+        try {
+            Map<String, Object> extras = new LinkedHashMap<String, Object>();
+            extras.put(null, "null-key");
+            extras.put("", "empty-key");
+            extras.put("valid", "value");
+
+            OperateLogContextHolder.putExtras(extras);
+
+            assertEquals(1, context.getExtra().size());
+            assertEquals("value", context.getExtra().get("valid"));
+        } finally {
+            OperateLogContextHolder.unbind();
+        }
     }
 
     @Test

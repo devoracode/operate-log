@@ -12,8 +12,10 @@ import java.lang.reflect.Method;
 import java.util.Deque;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * traceId 半写降级回归：{@code MDC.put} 写入生效后才抛异常时，降级路径必须清掉半写值。
@@ -28,6 +30,31 @@ class OperateLogBoot3TraceIdCleanupTest {
 
     private static final String TRACE_ID_KEY = "traceId";
     private static final String[] ADAPTER_FIELD_NAMES = {"MDC_ADAPTER", "mdcAdapter"};
+
+    @Test
+    void generatedTraceIdIsRemovedOnlyWhenUnchanged() throws Exception {
+        MDC.clear();
+        OperateLogAspect aspect = new OperateLogAspect(null, null, null, null, null, null,
+                null, null, null, false, null, TRACE_ID_KEY, 64);
+        Method resolve = OperateLogAspect.class.getDeclaredMethod("resolveTraceId");
+        resolve.setAccessible(true);
+        Method cleanup = cleanupMethod();
+        try {
+            resolve.invoke(aspect);
+            String generated = MDC.get(TRACE_ID_KEY);
+            assertNotNull(generated);
+            cleanup.invoke(aspect, generated, TRACE_ID_KEY);
+            assertNull(MDC.get(TRACE_ID_KEY));
+
+            resolve.invoke(aspect);
+            generated = MDC.get(TRACE_ID_KEY);
+            MDC.put(TRACE_ID_KEY, "business-trace");
+            cleanup.invoke(aspect, generated, TRACE_ID_KEY);
+            assertEquals("business-trace", MDC.get(TRACE_ID_KEY));
+        } finally {
+            MDC.clear();
+        }
+    }
 
     @Test
     void halfWrittenTraceIdIsClearedOnDegradedPath() throws Exception {
@@ -58,6 +85,18 @@ class OperateLogBoot3TraceIdCleanupTest {
         Method method = OperateLogAspect.class.getDeclaredMethod("resolveTraceId");
         method.setAccessible(true);
         return method.invoke(aspect);
+    }
+
+    private static Method cleanupMethod() throws Exception {
+        try {
+            Method method = OperateLogAspect.class.getDeclaredMethod(
+                    "clearTraceIdIfUnchanged", String.class, String.class);
+            method.setAccessible(true);
+            return method;
+        } catch (NoSuchMethodException ex) {
+            fail("OperateLogAspect 必须按当前值比对后清理 traceId");
+            return null;
+        }
     }
 
     private static Field locateAdapterField() {

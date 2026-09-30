@@ -27,6 +27,7 @@ target
 .*/
 .*
 !.gitignore
+!.gitattributes
 !.github
 docs/
 AGENTS.md

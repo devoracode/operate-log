@@ -190,7 +190,7 @@ public class DemoController {
         nested.put("safe", "visible");
         java.util.List<Object> values = new java.util.ArrayList<Object>();
         values.add(nested);
-        values.add("extra-padding-" + new String(new char[10000]).replace(' ', 'x'));
+        values.add("extra-padding-" + new String(new char[10000]).replace('\0', 'x'));
         OperateLogContextHolder.putExtra("nested", values);
         OperateLogContextHolder.putExtra("broken", new Object() {
             public Object getSelf() { return this; }

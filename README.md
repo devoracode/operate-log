@@ -27,12 +27,12 @@
 | 双栈兼容 | 单一 Starter 同时支持 Spring Boot 2.x（`javax.servlet`）与 3.x（`jakarta.servlet`），按宿主 classpath 自动条件装配；非 Web 环境自动降级为空实现 |
 | 记录时机 | `recordOn = ALWAYS / SUCCESS / ERROR` 直观过滤「仅成功 / 仅失败」，零 SpEL 开销，与 `condition` 取交集 |
 | SpEL 表达式 | 条件过滤、业务 ID 提取、描述模板（`#{...}` 模板语法） |
-| 敏感数据脱敏 | JSON 树递归脱敏 + query string 参数名掩码，字段名忽略大小写，脱敏字段与替换文本可配置 |
+| 敏感数据脱敏 | **默认关闭**，宿主多有自己的脱敏方案；开启后 JSON 树递归脱敏 + query string 参数名掩码，字段名忽略大小写，脱敏字段与替换文本可配置 |
 | 全链路关联 | traceId **只从 MDC 透传，不自造**（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系）；MDC 无值时该字段为 `null`。本组件从不写入或清理宿主 MDC |
 | 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
 | 载荷防护 | `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器 / 字节数组等不宜序列化的值，在**入参与返回值两侧**都自动替换为 `<IGNORED:类型>` 占位符（`byte[]` 的占位符是 `<IGNORED:[B>`，JVM 数组类名没有结尾方括号）；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
 | 自定义字段 | 业务方法与 Resolver 内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意字段（`extra`），无需扩展记录模型 |
-| 宿主零污染 | 不注册任何 `ObjectMapper` bean，宿主 `spring.jackson.*` 与自定义 `Module` 不受影响；脱敏默认字段始终生效，配置只追加不移除 |
+| 宿主零污染 | 不注册任何 `ObjectMapper` bean，宿主 `spring.jackson.*` 与自定义 `Module` 不受影响；脱敏默认关闭，开启时内置默认字段始终生效、配置只追加不移除 |
 | 可插拔扩展点 | Handler / 操作人解析 / HTTP 上下文解析 / 序列化 / 脱敏 / SpEL 引擎 / 载荷策略全部可替换（`@ConditionalOnMissingBean` 自动让位） |
 | 异常降级 | 操作人、HTTP 上下文解析失败时降级为 `null`，SpEL 表达式求值失败按方向降级（condition 视为通过、模板输出原文），日志其余字段照常记录 |
 
@@ -207,7 +207,7 @@ operate-log:
     trust-proxy: false            # 是否信任反向代理头（X-Forwarded-For / X-Real-IP）
     capture-headers: false        # 是否采集完整请求头（写入 requestHeaders）
   mask:
-    enabled: true                 # 是否启用敏感数据脱敏
+    enabled: false                # 是否启用敏感数据脱敏，默认关闭；需要本组件兜底时置 true
     mask-text: "******"          # 脱敏替换文本
     # fields 为【追加】语义（匹配忽略大小写）：内置 16 项默认字段始终脱敏，配置只往里加。
     # 默认字段：password / passwd / pwd / token / accessToken / refreshToken / authorization /
@@ -234,7 +234,7 @@ operate-log:
 | `operate-log.trace-id-mdc-key` | `traceId` | traceId 的 MDC key。与链路追踪体系的 MDC 写入 key 对齐（Micrometer/Sleuth 常见 `traceId`，OTel logback 桥接常见 `trace_id`）；**只读不写**，本组件不写入也不清理该 key，MDC 取不到值时 `traceId` 为 `null`，配置空白回退默认 key |
 | `operate-log.http.trust-proxy` | `false` | 信任代理头时，客户端 IP 解析顺序：`X-Forwarded-For`（取逗号链最后一个，即可信代理追加值）→ `X-Real-IP` → `getRemoteAddr()`；否则直接取 `getRemoteAddr()`。**仅在应用前存在单一可信代理、且该代理会清洗客户端头并追加转发链时开启**；多级代理需自行注册 `ClientIpResolver` |
 | `operate-log.http.capture-headers` | `false` | 开启后采集全部请求头写入 `requestHeaders`（JSON 对象）。注意头部可能含 Cookie 等敏感信息，开启后脱敏器会一并处理 |
-| `operate-log.mask.enabled` | `true` | 脱敏总开关。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段、`requestQuery`（按参数名匹配）、`errorMessage` / `errorStack`（纯文本子串匹配）。**不作用于 `extra`**——见字段表说明 |
+| `operate-log.mask.enabled` | `false` | 脱敏总开关，**默认关闭**——宿主若已有自己的脱敏方案，保持关闭即可避免重复处理、让日志保留原值可查；需要本组件兜底时置 `true`。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段、`requestQuery`（按参数名匹配）、`errorMessage` / `errorStack`（纯文本子串匹配）。**不作用于 `extra`**——见字段表说明 |
 | `operate-log.mask.mask-text` | `******` | 替换文本 |
 | `operate-log.mask.fields` | 空 | 在 16 个内置默认字段之外**追加**的脱敏字段名（匹配忽略大小写）。默认字段始终生效，无法通过配置移除 |
 | `operate-log.payload.max-request-length` | `0` | `requestBody` / `requestHeaders` / `requestQuery` / `userAgent` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
@@ -243,7 +243,9 @@ operate-log:
 | `operate-log.payload.max-extra-length` | `0` | `extra` 整体 JSON 的最大字符数，`<=0` 不截断（与其他三项载荷上限一致）；超限时按单条实际 JSON 长度缩减：`String` 二分截短并保留 `...[truncated]` 标记，非 `String` 按实际大小移除，保留项类型不变；最终结果严格不超过上限 |
 | `operate-log.payload.ignore-types` | 17 项内置 | 在内置安全类型之外**追加**序列化时跳过的类型（全限定类名，父类/接口命中即算），入参与返回值两侧都生效，替换为 `<IGNORED:类型简名>`；内置类型始终生效，无法通过配置移除，如需不同集合请注册自定义 `PayloadPolicy` bean。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
 
-> **升级提示**：`payload.ignore-types` 已从“整体替换”改为“追加”，内置 17 项安全防护无法再通过配置移除；必须自定义完整集合时，请改注册 `PayloadPolicy` bean。同时，默认脱敏字段新增 `apiKey` / `privateKey` / `accessKey` / `secretKey` / `creditCard`，升级后这些字段将默认被掩码。
+> **升级提示**：`payload.ignore-types` 已从“整体替换”改为“追加”，内置 17 项安全防护无法再通过配置移除；必须自定义完整集合时，请改注册 `PayloadPolicy` bean。
+>
+> **脱敏默认值变更**：`operate-log.mask.enabled` 由 `true` 改为 `false`。宿主若没有自己的脱敏方案，**升级后 `password` / `token` / `authorization` 等内置默认字段会以原值进日志**，请显式配置 `operate-log.mask.enabled: true` 保持原行为。
 
 ## 日志输出字段（`OperateLogRecord`）
 
@@ -290,13 +292,14 @@ Filter → DispatcherServlet → Interceptor#preHandle
 
 ## 敏感数据脱敏
 
+- **默认关闭**（`operate-log.mask.enabled`）。不少宿主已有自己的脱敏通道（网关、序列化层、`SensitiveDataMasker` 自定义实现等），默认开启只会让同一份数据被处理两遍、并让日志失去原值可查性，因此不配置即不介入。需要本组件兜底时显式置 `true`；关闭时敏感字段按原样写入，这是配置选择而非缺陷。
 - 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段、`requestQuery`（URL 查询参数）以及 `errorMessage` / `errorStack`（异常消息与堆栈）。JSON 字段采用 **JSON 树递归**（Jackson `JsonNode`）：嵌套对象、数组、集合中的敏感字段全部命中，不限于顶层；query string 按参数名匹配；异常文本按敏感字段名做单遍子串匹配，三条通道复用同一份敏感字段集合。
 - query 参数名先按 `application/x-www-form-urlencoded` **解码再匹配**，`%74oken=...` / `Pass%77ord=...` 这类编码写法与明文同名同等命中，防止编码绕过；输出仍保留参数名原始写法，只替换值。
 - 一个敏感字段都没命中时返回原文，不做无谓的重写（避免数字与格式漂移）。
 - 字段名匹配**忽略大小写**（`Password` / `PASSWORD` / `password` 均脱敏）。
 - 命中字段的值替换为 `mask-text`（默认 `******`）。
 - JSON 内容无法解析或脱敏过程异常时**原样返回**，不阻断日志流程。
-- 敏感字段集合通过 `operate-log.mask.fields` **追加**。16 个内置默认字段（`password` / `passwd` / `pwd` / `token` / `accessToken` / `refreshToken` / `authorization` / `cookie` / `set-cookie` / `secret` / `clientSecret` / `apiKey` / `privateKey` / `accessKey` / `secretKey` / `creditCard`）**始终脱敏，配置无法移除**——避免「只想加一个字段」却把既有脱敏项一起关掉。
+- 敏感字段集合通过 `operate-log.mask.fields` **追加**。开启脱敏后，16 个内置默认字段（`password` / `passwd` / `pwd` / `token` / `accessToken` / `refreshToken` / `authorization` / `cookie` / `set-cookie` / `secret` / `clientSecret` / `apiKey` / `privateKey` / `accessKey` / `secretKey` / `creditCard`）**始终脱敏，配置无法移除**——避免「只想加一个字段」却把既有脱敏项一起关掉。
 - **作用边界**：脱敏仅作用于 `requestHeaders`、`requestBody`、`responseBody`、`requestQuery`、`errorMessage` 和 `errorStack`；`requestUrl`（不含 query 的完整 URL）、`userAgent`、`extra` 及其他元数据字段不经过脱敏管道。`extra` 只按开发者显式写入的内容采集，不做字段语义猜测或自动脱敏。
 
 ## 扩展点

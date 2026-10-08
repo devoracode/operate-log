@@ -190,7 +190,9 @@ public void cancel(String orderNo) { ... }
 - 方法参数名与内置变量或位置别名 `#pN` / `#aN` 同名时**以保留名为准**：撞名参数不写入求值上下文（否则 `#result` 会被参数静默改写，审计字段失真），该参数改用 `#p0` / `#a0` 等位置别名取。
 - **表达式失败不中断日志**：语法错误 / 空指针访问等按方向降级——`condition` 视为通过（宁可多记不漏记）、`description` 输出模板原文、`businessId` 记 `null`，原因以 debug 日志暴露。
 - 需要整体关闭 SpEL 求值（零求值开销）时，注册自定义 `SpelEngine` bean 返回 `new DefaultSpelEngine(false)`：condition 恒通过、description 输出原文、businessId 为 `null`。
-- **安全沙箱**：SpEL 表达式仅允许来自**编译期注解常量**（即 `@OperateLog` 的 `description` / `businessId` / `condition` 属性值），**禁止运行时动态注入表达式**（如从数据库、配置文件或外部接口读取表达式文本）。引擎使用受限的 `SimpleEvaluationContext` 沙箱，仅支持变量读取、属性访问与实例方法调用，**不支持**类型引用（`T(...)`）、构造函数、bean 引用与静态方法调用——即使表达式文本被动态注入，也无法执行任意代码，从源头杜绝远程代码执行（RCE）风险。
+- **表达式边界**：SpEL 表达式仅允许来自**编译期注解常量**（即 `@OperateLog` 的 `description` / `businessId` / `condition` 属性值），**禁止运行时动态注入表达式**（如从数据库、配置文件或外部接口读取表达式文本）——这是本组件唯一由代码结构保证的防线，请不要绕过。
+  引擎使用受限的 `SimpleEvaluationContext`（不提供类型引用 `T(...)`、构造函数 `new ...`、bean 引用 `@bean` 与静态方法的解析器），越界表达式求值失败后按降级方向处理，不会中断日志链路。
+  但这层边界**不是本组件自己做 AST 校验得来的**：可达范围由 `SimpleEvaluationContext` 的能力集与 Spring 侧的方法过滤共同决定，例如 `#p0.class` 这类反射链能走不通，是因为 Spring 过滤掉了 `java.lang.Object` 声明的方法。因此本组件不承诺「杜绝 RCE」——宿主升级 Spring 若放宽那条过滤，边界会随之变化。若表达式文本可能来自不可信来源，请不要依赖本组件兜底。
 
 ## 配置参考（`application.yml`）
 

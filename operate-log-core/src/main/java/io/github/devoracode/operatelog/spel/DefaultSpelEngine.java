@@ -23,12 +23,17 @@ import java.util.regex.Pattern;
  * 总开关 {@code enabled=false} 时零求值（条件恒通过、模板原样输出、求值返回 null）；
  * 单表达式失败按同一方向就地降级，原因以 debug 暴露。
  *
- * <p><b>安全沙箱</b>：本引擎使用 {@link SimpleEvaluationContext#forReadOnlyDataBinding()}，
- * 仅支持变量读取、属性访问与实例方法调用，<b>不支持</b>类型引用（{@code T(...)}）、构造函数
- * （{@code new ...}）、bean 引用（{@code @bean}）与静态方法调用——即使表达式文本来自编译期
- * 注解常量（{@code @OperateLog} 的属性值），也无法执行任意代码；运行时动态注入的表达式
- * 同样只能命中沙箱内能力，从源头杜绝远程代码执行（RCE）风险。越界表达式求值即失败，
+ * <p><b>安全边界</b>：本引擎使用 {@link SimpleEvaluationContext#forReadOnlyDataBinding()}
+ * 加 {@code withInstanceMethods()}，即不提供类型引用（{@code T(...)}）、构造函数（{@code new ...}）、
+ * bean 引用（{@code @bean}）与静态方法的解析器，只能读变量、走属性与实例方法。越界表达式求值即失败，
  * 按同一降级方向处理（条件通过、模板原样、求值返回 null），不中断日志链路。</p>
+ *
+ * <p><b>这层边界的来源要说清楚</b>：本组件不做任何 AST 校验，也不逐个方法设白名单。可达范围由
+ * {@code SimpleEvaluationContext} 的能力集与 Spring 侧的方法过滤共同决定——例如 {@code #p0.class}
+ * 这类反射链依赖 Spring 过滤掉 {@link Object} 声明的方法才走不通；宿主升级 Spring 若放宽这条过滤，
+ * 本组件既不会报错也没有用例变红。真正的防线是<b>表达式文本只允许来自编译期注解常量</b>
+ * （{@code @OperateLog} 的属性值），它由代码结构保证，而非沙箱。运行时动态注入的表达式仍受上述
+ * 边界限制，但不具备这层保证。</p>
  */
 public class DefaultSpelEngine implements SpelEngine {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSpelEngine.class);

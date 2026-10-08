@@ -447,14 +447,14 @@ public class OperateLogAspect {
             if (measured == null) {
                 Object value = entry.getValue();
                 if (isSimpleExtraValue(value)) {
-                    extra.clear();
+                    dropExtra(extra, "a simple value could not be serialized");
                     return;
                 }
                 Object placeholder = unserializableValue(value);
                 extra.put(entry.getKey(), placeholder);
                 measured = measureExtraEntry(entry.getKey(), placeholder);
                 if (measured == null) {
-                    extra.clear();
+                    dropExtra(extra, "the degraded placeholder could not be serialized");
                     return;
                 }
             }
@@ -493,9 +493,18 @@ public class OperateLogAspect {
         if (!extra.isEmpty()) {
             String serialized = this.serializer.serialize(extra);
             if (serialized == null || UNSERIALIZABLE_SENTINEL.equals(serialized) || serialized.length() > limit) {
-                extra.clear();
+                dropExtra(extra, "the limited map still exceeds the configured limit");
             }
         }
+    }
+
+    // 整表清空之后记录里的 extra 与「业务方法本来就没写 extra」完全同形，审计方无从分辨，
+    // 所以清空必须留痕；否则这段数据就是静默丢失的。
+    private void dropExtra(Map<String, Object> extra, String reason) {
+        int droppedKeys = extra.size();
+        extra.clear();
+        LOGGER.warn("operate-log: extra dropped entirely because {}; {} key(s) lost.",
+                reason, droppedKeys);
     }
 
     private ExtraEntry measureExtraEntry(String key, Object value) {

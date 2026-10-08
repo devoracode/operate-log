@@ -53,8 +53,11 @@ public class OperateLogProperties {
     @Data
     public static class Mask {
 
-        /** 是否启用脱敏。 */
-        private boolean enabled = true;
+        /**
+         * 是否启用脱敏。默认关闭——宿主若已有一套自己的脱敏方案，默认开启只会造成重复处理并让日志
+         * 可读性下降；需要本组件兜底时显式置 {@code true}。
+         */
+        private boolean enabled = false;
 
         /** 命中字段的替换文本。 */
         private String maskText = "******";

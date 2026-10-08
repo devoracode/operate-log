@@ -3,6 +3,7 @@ package io.github.devoracode.operatelog.test.boot3;
 import io.github.devoracode.operatelog.annotation.OperateLog;
 import io.github.devoracode.operatelog.aspect.OperateLogAspect;
 import io.github.devoracode.operatelog.boot.OperateLogAutoConfiguration;
+import io.github.devoracode.operatelog.boot.OperateLogProperties;
 import io.github.devoracode.operatelog.boot.servlet.jakarta.JakartaClientIpResolver;
 import io.github.devoracode.operatelog.boot.servlet.jakarta.JakartaHttpContextResolver;
 import io.github.devoracode.operatelog.model.HttpContext;
@@ -31,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -118,6 +120,19 @@ class OperateLogBoot3StarterAssemblyTest {
                     SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
                     assertTrue(masker.mask("{\"password\":\"x\"}").contains("[hidden]"));
                 });
+    }
+
+    /**
+     * 脱敏默认关闭：宿主多有自己的脱敏方案，本组件默认不介入，避免重复处理并让日志保持原样可查。
+     * 这条钉的是配置项默认值——masker bean 仍然装配，开关只控制切面是否调用它。
+     */
+    @Test
+    void maskIsDisabledByDefault() {
+        this.runner.run((context) -> {
+            OperateLogProperties properties = context.getBean(OperateLogProperties.class);
+            assertFalse(properties.getMask().isEnabled(), "mask.enabled 默认必须为 false");
+            assertNotNull(context.getBean(SensitiveDataMasker.class), "masker bean 仍应装配");
+        });
     }
 
     @Test

@@ -58,6 +58,12 @@ jobs:
           server-password: CENTRAL_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: GPG_PASSPHRASE
+      - name: Show Maven environment
+        run: |
+          java -version
+          mvn -version
+      - name: Clean
+        run: mvn --batch-mode clean
       - name: Publish to Maven Central
         # -Prelease 提供 source / javadoc / gpg 签名与 central-publishing-maven-plugin。
         # -pl 只点根 POM 与两个库模块：test-boot2 / test-boot3 是可运行示例工程，绝不上传

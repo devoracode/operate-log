@@ -108,7 +108,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
         }
         StringBuilder result = new StringBuilder(query.length());
         boolean changed = false;
-        String[] pairs = query.split("&");
+        String[] pairs = query.split("&", -1);
         for (int i = 0; i < pairs.length; i++) {
             if (i > 0) {
                 result.append('&');

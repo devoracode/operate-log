@@ -196,6 +196,27 @@ class OperateLogBoot3StarterAssemblyTest {
     }
 
     /**
+     * query 掩码必须保真：命中敏感字段后走的是重建结果，分隔符一旦丢失，记录下来的 query
+     * 就与客户端实际发送的不一致——审计日志不能改写被审计对象的原文形态。
+     */
+    @Test
+    void maskedQueryKeepsTrailingSeparators() {
+        this.runner.run((context) -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            // split 若丢掉尾部空段，这三种写法都会被改写
+            assertEquals("a=1&token=******&", masker.maskQuery("a=1&token=s&"));
+            assertEquals("a=1&token=******&&", masker.maskQuery("a=1&token=s&&"));
+            assertEquals("token=******&&", masker.maskQuery("token=s&&"));
+            // 中间空段与无值参数本来就原样保留
+            assertEquals("&&a=1&&token=******&&", masker.maskQuery("&&a=1&&token=s&&"));
+            // 未命中时整体原样返回，不做任何规范化
+            String untouched = "a=1&&b=2&";
+            assertEquals(untouched, masker.maskQuery(untouched));
+        });
+    }
+
+    /**
      * 脱敏字段配置是「追加」而非「整体替换」：只想加一个字段的配置动作不得静默关掉内置默认项。
      * query string 掩码复用同一份字段集合，一并在此钉死。
      */

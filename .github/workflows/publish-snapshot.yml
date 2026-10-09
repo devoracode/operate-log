@@ -61,6 +61,12 @@ jobs:
           server-id: central
           server-username: CENTRAL_TOKEN_USERNAME
           server-password: CENTRAL_TOKEN_PASSWORD
+      - name: Show Maven environment
+        run: |
+          java -version
+          mvn -version
+      - name: Clean
+        run: mvn --batch-mode clean
       - name: Publish SNAPSHOT to Maven Central
         # -Prelease 提供 central-publishing-maven-plugin（0.7.0+ 对 -SNAPSHOT 自动路由到快照仓库）；
         # Portal 对快照不做校验、可覆盖发布，签名无意义。

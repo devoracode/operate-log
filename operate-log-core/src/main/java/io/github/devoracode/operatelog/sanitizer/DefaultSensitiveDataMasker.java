@@ -1,7 +1,9 @@
 package io.github.devoracode.operatelog.sanitizer;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import org.apache.commons.lang3.StringUtils;
@@ -9,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Method;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +32,7 @@ import java.util.regex.Pattern;
  * 默认脱敏器：将 JSON 文本解析为 Jackson {@link JsonNode} 动态树，
  * 递归遍历只替换命中字段名的值，不改结构；一个字段都没命中时原样返回。
  *
- * <p>非 JSON 文本无法定位字段名，解析失败即原样落地；
+ * <p>无法安全处理的 JSON 载荷替换为占位符；
  * 需要别的脱敏策略（如手机号部分掩码）时注册自定义 {@link SensitiveDataMasker} bean 覆盖。</p>
  *
  * <p>同时覆写 {@link #maskQuery(String)}：对 URL query string 按参数名匹配并替换敏感值，
@@ -37,7 +40,9 @@ import java.util.regex.Pattern;
  */
 public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSensitiveDataMasker.class);
-    private static final String DEFAULT_MASK_TEXT = "******";
+    static final String DEFAULT_MASK_TEXT = "******";
+    private static final String INVALID_PAYLOAD = "<MASKED>";
+    private static final String UNSERIALIZABLE = "<UNSERIALIZABLE>";
     /**
      * 内置默认敏感字段，<b>始终生效</b>：构造时与传入集合取并集，配置无法移除。
      * 免得「只想追加一个字段」的动作静默关掉既有脱敏项——整体替换默认集的代价远大于无法精简。
@@ -60,6 +65,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
                     "secretKey",
                     "creditCard")));
     private final ObjectMapper objectMapper;
+    private final ObjectReader treeReader;
     private final Set<String> sensitiveFields;
     private final Pattern plainTextFieldPattern;
     private final String maskText;
@@ -69,6 +75,8 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
                                       Set<String> sensitiveFields,
                                       String maskText) {
         this.objectMapper = objectMapper;
+        this.treeReader = objectMapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS,
+                DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY);
         this.sensitiveFields = normalizeFields(sensitiveFields);
         this.plainTextFieldPattern = buildPlainTextFieldPattern(this.sensitiveFields);
         this.maskText = StringUtils.defaultIfEmpty(maskText, DEFAULT_MASK_TEXT);
@@ -77,24 +85,26 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
 
     @Override
     public String mask(String content) {
-        if (StringUtils.isBlank(content) || this.sensitiveFields.isEmpty()) {
+        if (StringUtils.isBlank(content) || UNSERIALIZABLE.equals(content)) {
             return content;
         }
         try {
-            JsonNode root = this.objectMapper.readTree(content);
+            JsonNode root = this.treeReader.readTree(content);
             if (!maskNode(root)) {
                 return content;
             }
             return this.objectMapper.writeValueAsString(root);
         } catch (Exception | StackOverflowError ex) {
-            // 降 debug：序列化降级产生的 <UNSERIALIZABLE:...> 占位符本就不是合法 JSON，
-            // 正常业务路径也会命中这里，warn 会按调用次数刷屏。排查「脱敏为什么没生效」时开 debug 对照。
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("operate-log: masking skipped — content is not valid JSON, " + "sensitive fields (if any) will NOT be masked. " + "If using a custom OperateLogSerializer, ensure it produces JSON output.",
-                        ex);
-            }
-            return content;
+            LOGGER.debug("operate-log: JSON payload replaced after masking failure (exceptionType={}).",
+                    ex.getClass().getName());
+            return INVALID_PAYLOAD;
         }
+    }
+
+    @Override
+    public Object[] maskArguments(Method method, Object[] arguments) {
+        return NamedArgumentMasking.mask(method, arguments,
+                name -> this.sensitiveFields.contains(StringUtils.lowerCase(name, Locale.ROOT)), this.maskText);
     }
 
     /**

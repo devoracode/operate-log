@@ -4,6 +4,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -24,9 +25,23 @@ public interface SensitiveDataMasker {
      * 对 JSON 格式内容进行敏感字段脱敏。
      *
      * @param content 序列化后的 JSON 文本
-     * @return 命中字段已替换的 JSON 文本；未命中或不可解析时原样返回
+     * @return 脱敏后的文本；无法安全处理的内容应替换成占位符
      */
     String mask(String content);
+
+    /**
+     * 在序列化前按参数名或显式 MVC 绑定名隐藏参数。默认保护内置敏感字段，
+     * 自定义脱敏器可覆写以追加字段或使用自己的替换文本。
+     *
+     * @param method 被拦截的方法，用于读取参数元数据
+     * @param arguments 被拦截方法的实参，不得就地修改
+     * @return 保持参数顺序的脱敏副本；无匹配时可返回原数组
+     */
+    default Object[] maskArguments(Method method, Object[] arguments) {
+        return NamedArgumentMasking.mask(method, arguments,
+                name -> DefaultSensitiveDataMasker.DEFAULT_FIELDS.stream().anyMatch(name::equalsIgnoreCase),
+                DefaultSensitiveDataMasker.DEFAULT_MASK_TEXT);
+    }
 
     /**
      * 对纯文本（非 JSON）内容进行敏感数据脱敏。

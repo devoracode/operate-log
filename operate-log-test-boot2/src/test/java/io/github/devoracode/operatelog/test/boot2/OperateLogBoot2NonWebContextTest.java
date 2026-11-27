@@ -3,6 +3,7 @@ package io.github.devoracode.operatelog.test.boot2;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.devoracode.operatelog.annotation.OperateLog;
 import io.github.devoracode.operatelog.aspect.OperateLogAspect;
 import io.github.devoracode.operatelog.context.OperateLogContext;
 import io.github.devoracode.operatelog.context.OperateLogContextHolder;
@@ -16,9 +17,14 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static io.github.devoracode.operatelog.test.boot2.LogRecords.text;
@@ -39,7 +45,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 用 {@code FilteredClassLoader} 覆盖。
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE,
-        properties = "spring.main.web-application-type=none")
+        properties = {"spring.main.web-application-type=none", "operate-log.mask.fields[0]=pinCode",
+                "operate-log.mask.mask-text=[hidden]"})
 class OperateLogBoot2NonWebContextTest {
 
     private static final String LOG_PREFIX = "operate-log=";
@@ -128,6 +135,31 @@ class OperateLogBoot2NonWebContextTest {
         HttpContext resolved = resolver.resolve();
         assertNull(resolved, "非 Web 环境 HTTP 上下文必须为 null，而不是抛异常");
         assertNull(this.context.getBean(ClientIpResolver.class).resolve());
+    }
+
+    @Test
+    void masksJavaAndMvcArgumentNamesWithoutChangingBusinessValues() {
+        List<String> values = this.context.getBean(ProtectedLogging.class)
+                .namedArguments("visible", "test-password", "test-token", "test-pin", null);
+
+        assertEquals(Arrays.asList("visible", "test-password", "test-token", "test-pin", null), values);
+        assertEquals("[\"visible\",\"[hidden]\",\"[hidden]\",\"[hidden]\",null]", text(lastRecord(), "requestBody"));
+    }
+
+    @TestConfiguration
+    static class ProtectedLoggingConfiguration {
+        @Bean
+        ProtectedLogging protectedLogging() {
+            return new ProtectedLogging();
+        }
+    }
+
+    static class ProtectedLogging {
+        @OperateLog
+        public List<String> namedArguments(String visible, String password, @RequestParam("accessToken") String submitted,
+                                           String pinCode, String optional) {
+            return Arrays.asList(visible, password, submitted, pinCode, optional);
+        }
     }
 
     private Map<String, Object> lastRecord() {

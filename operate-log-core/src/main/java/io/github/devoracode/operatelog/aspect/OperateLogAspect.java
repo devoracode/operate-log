@@ -318,8 +318,11 @@ public class OperateLogAspect {
         String requestHeaders = httpContext == null ? null : this.serializer.serialize(httpContext.getHeaders());
         String requestBody = null;
         if (annotation.recordRequest()) {
-            Object[] requestArguments = this.payloadPolicy.filterArguments(context.getArguments());
-            requestBody = this.serializer.serializeArguments(requestArguments);
+            Object[] requestArguments = context.getArguments();
+            if (this.maskEnabled) {
+                requestArguments = this.sensitiveDataMasker.maskArguments(context.getMethod(), requestArguments);
+            }
+            requestBody = this.serializer.serializeArguments(this.payloadPolicy.filterArguments(requestArguments));
         }
         String responseBody = annotation.recordResponse()
                 ? this.serializer.serialize(this.payloadPolicy.filterValue(context.getResult()))

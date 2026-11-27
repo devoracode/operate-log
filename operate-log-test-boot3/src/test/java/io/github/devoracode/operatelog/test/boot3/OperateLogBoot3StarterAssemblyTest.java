@@ -257,6 +257,19 @@ class OperateLogBoot3StarterAssemblyTest {
     }
 
     @Test
+    void replacesJsonThatCannotBeMaskedSafely() {
+        this.runner.run(context -> {
+            SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);
+
+            assertEquals("<MASKED>", masker.mask("password=test-value"));
+            assertEquals("<MASKED>", masker.mask("{} {\"password\":\"test-value\"}"));
+            assertEquals("<MASKED>", masker.mask("{\"entry\":{\"password\":\"test-value\"},\"entry\":{}}"));
+            assertEquals("<UNSERIALIZABLE>", masker.mask("<UNSERIALIZABLE>"));
+            assertEquals("[\"ordinary\"]", masker.mask("[\"ordinary\"]"));
+        });
+    }
+
+    @Test
     void plainTextMasksEverySensitiveFieldInEitherTextOrder() {
         this.runner.run((context) -> {
             SensitiveDataMasker masker = context.getBean(SensitiveDataMasker.class);

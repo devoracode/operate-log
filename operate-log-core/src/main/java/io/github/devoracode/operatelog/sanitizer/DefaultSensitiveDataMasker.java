@@ -243,7 +243,9 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
                 lastEnd = matcher.end();
                 continue;
             }
-            int valueEnd = findValueEnd(text, valueStart, quote);
+            int valueEnd = quote == 0 && isCredentialHeader(matcher.group())
+                    ? findLineEnd(text, valueStart)
+                    : findValueEnd(text, valueStart, quote);
             result.append(text, lastEnd, valueStart);
             if (valueEnd > valueStart) {
                 result.append(this.maskText);
@@ -298,6 +300,19 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
 
     private static boolean isQuote(char c) {
         return c == '"' || c == '\'';
+    }
+
+    private static boolean isCredentialHeader(String field) {
+        return "authorization".equalsIgnoreCase(field) || "proxy-authorization".equalsIgnoreCase(field)
+                || "cookie".equalsIgnoreCase(field) || "set-cookie".equalsIgnoreCase(field);
+    }
+
+    private static int findLineEnd(String text, int start) {
+        int end = start;
+        while (end < text.length() && text.charAt(end) != '\r' && text.charAt(end) != '\n') {
+            end++;
+        }
+        return end;
     }
 
     private static boolean isValueTerminator(char c) {

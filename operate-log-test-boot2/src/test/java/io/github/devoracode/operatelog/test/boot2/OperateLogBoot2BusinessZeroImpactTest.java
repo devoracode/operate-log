@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.devoracode.operatelog.aspect.OperateLogAspect;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
 import io.github.devoracode.operatelog.handler.OperateLogHandler;
 import io.github.devoracode.operatelog.serializer.DefaultOperateLogSerializer;
@@ -25,6 +26,7 @@ import java.util.Map;
 import static io.github.devoracode.operatelog.test.boot2.LogRecords.text;
 import static io.github.devoracode.operatelog.test.boot2.LogRecords.isNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -43,6 +45,7 @@ class OperateLogBoot2BusinessZeroImpactTest {
 
     private static final String LOG_PREFIX = "operate-log=";
     private static final String APPENDER_NAME = "test-operate-log-zero-impact";
+    private static final String HANDLER_FAILURE_DETAIL = "test-handler-detail";
 
     private static ListAppender<ILoggingEvent> appender;
 
@@ -75,7 +78,7 @@ class OperateLogBoot2BusinessZeroImpactTest {
         OperateLogHandler operateLogHandler(ObjectMapper objectMapper) {
             final OperateLogHandler delegate = new DefaultOperateLogHandler(objectMapper);
             return record -> {
-                ChaosFlags.throwIfActive(ChaosFlags.HANDLER, "chaos: handler down");
+                ChaosFlags.throwIfActive(ChaosFlags.HANDLER, HANDLER_FAILURE_DETAIL);
                 delegate.handle(record);
             };
         }
@@ -152,14 +155,27 @@ class OperateLogBoot2BusinessZeroImpactTest {
     }
 
     @Test
-    void handlerFailureDoesNotTouchBusiness() {
+    void handlerFailureDoesNotTouchBusinessOrExposeExceptionDetails() {
         ChaosFlags.enable(ChaosFlags.HANDLER);
+        Logger logger = (Logger) LoggerFactory.getLogger(OperateLogAspect.class);
+        ListAppender<ILoggingEvent> diagnostics = new ListAppender<>();
+        diagnostics.start();
+        logger.addAppender(diagnostics);
+        try {
+            ResponseEntity<String> response = this.restTemplate.postForEntity(
+                    "/demo", java.util.Collections.singletonMap("password", "p"), String.class);
 
-        ResponseEntity<String> response = this.restTemplate.postForEntity(
-                "/demo", java.util.Collections.singletonMap("password", "p"), String.class);
-
-        assertEquals(200, response.getStatusCode().value());
-        assertTrue(response.getBody().contains("p"), String.valueOf(response.getBody()));
+            assertEquals(200, response.getStatusCode().value());
+            assertTrue(response.getBody().contains("p"), String.valueOf(response.getBody()));
+            assertEquals(1, diagnostics.list.size());
+            ILoggingEvent diagnostic = diagnostics.list.get(0);
+            assertTrue(diagnostic.getFormattedMessage().contains("exceptionType=" + IllegalStateException.class.getName()));
+            assertFalse(diagnostic.getFormattedMessage().contains(HANDLER_FAILURE_DETAIL));
+            assertNull(diagnostic.getThrowableProxy());
+        } finally {
+            logger.detachAppender(diagnostics);
+            diagnostics.stop();
+        }
     }
 
     @Test

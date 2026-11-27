@@ -29,7 +29,7 @@
 | SpEL 表达式 | 条件过滤、业务 ID 提取、描述模板（`#{...}` 模板语法） |
 | 敏感数据脱敏 | **默认关闭**；开启后按方法参数名、JSON 字段名、URL 查询参数名和异常文本中的字段名脱敏，字段与替换文本可配置 |
 | 全链路关联 | traceId **只从 MDC 透传，不自造**（`operate-log.trace-id-mdc-key`，默认 `traceId`，对齐 Sleuth / Micrometer / OTel 等链路追踪体系）；MDC 无值时该字段为 `null`。本组件从不写入或清理宿主 MDC |
-| 异常安全 | 日志组件内部任何异常均被隔离捕获，**绝不影响业务方法执行**；故障细节以 debug 日志暴露，不静默吞 |
+| 异常安全 | 日志侧故障降级，业务异常原样透传；组件诊断以 warn / debug 记录故障阶段与异常类型 |
 | 载荷防护 | `requestBody` / `responseBody` / `requestHeaders` / `requestQuery` / `userAgent` / `errorMessage` / `errorStack` 最大长度可配，超限截断打标记（标记计入上限，结果长度恒 `<=` 配置值）；文件 / 流 / Servlet 容器 / 字节数组等不宜序列化的值，在**入参与返回值两侧**都自动替换为 `<IGNORED:类型>` 占位符（`byte[]` 的占位符是 `<IGNORED:[B>`，JVM 数组类名没有结尾方括号）；序列化失败逐元素降级，单个坏参数不拖垮整条记录 |
 | 自定义字段 | 业务方法与 Resolver 内通过 `OperateLogContextHolder#putExtra` 向当前日志记录追加任意字段（`extra`），无需扩展记录模型 |
 | 宿主零污染 | 不注册任何 `ObjectMapper` bean，宿主 `spring.jackson.*` 与自定义 `Module` 不受影响；脱敏默认关闭，开启时内置默认字段始终生效、配置只追加不移除 |
@@ -297,7 +297,7 @@ Filter → DispatcherServlet → Interceptor#preHandle
 ## 敏感数据脱敏
 
 - **默认关闭**（`operate-log.mask.enabled`）。不少宿主已有自己的脱敏通道（网关、序列化层、`SensitiveDataMasker` 自定义实现等），默认开启只会让同一份数据被处理两遍、并让日志失去原值可查性，因此不配置即不介入。需要本组件兜底时显式置 `true`；关闭时敏感字段按原样写入，这是配置选择而非缺陷。
-- 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段、`requestQuery`（URL 查询参数）以及 `errorMessage` / `errorStack`（异常消息与堆栈）。JSON 脱敏会查找嵌套对象和数组中的敏感字段；查询串按参数名匹配；异常文本匹配带赋值符的字段。
+- 作用于 `requestHeaders`、`requestBody`、`responseBody` 三个 JSON 字符串字段、`requestQuery`（URL 查询参数）以及 `errorMessage` / `errorStack`（异常消息与堆栈）。JSON 脱敏会查找嵌套对象和数组中的敏感字段；查询串按参数名匹配；异常文本匹配带赋值符的字段，未加引号的授权头和 Cookie 值会掩码到行尾。
 - 方法入参在序列化前按 Java 参数名或显式 MVC 绑定名（如 `@RequestParam("token")`）匹配同一份敏感字段集合，保持 `requestBody` 的数组形状和参数顺序。Java 参数名依赖 `-parameters`。没有可识别名称的敏感标量，应通过显式命名的 DTO 传入，或关闭对应载荷采集。
 - query 参数名先按 `application/x-www-form-urlencoded` **解码再匹配**，`%74oken=...` / `Pass%77ord=...` 这类编码写法与明文同名同等命中，防止编码绕过；输出仍保留参数名原始写法，只替换值。
 - 一个敏感字段都没命中时返回原文，不做无谓的重写（避免数字与格式漂移）。
@@ -417,7 +417,7 @@ OperateLogAspect @Around 拦截
 关键设计保证：
 
 - **业务无感**：切面只在 `finally` 中做日志工作，业务异常原样透传；日志链路（注解查找、上下文构建、条件评估、序列化、脱敏、截断、Handler）整体包裹在 `catch (Throwable)` 中，任何日志侧故障不会导致业务请求失败。
-- **组件可观测**：所有被吞掉的故障（解析降级、组装失败、表达式失败）都以 `warn` 输出原因，排查「日志为什么少了」时开 `logging.level.io.github.devoracode.operatelog=debug` 可进一步降噪对照，不会静默吞。
+- **组件可观测**：解析和组装故障以 `warn` 记录；JSON 脱敏和表达式求值故障可用 `logging.level.io.github.devoracode.operatelog=debug` 查看。组件诊断只保留故障阶段、异常类型或累计次数，避免异常消息和堆栈中的数据进入诊断日志。
 - **解析降级**：操作人 / HTTP 上下文解析各自独立 try-catch，单个解析器故障只损失对应字段，其余字段照常落地。
 - **finally 不吞业务异常**：切面 `finally` 内的计时、组装与落地全部包在 `finishQuietly` 的
   `catch (Throwable)` 中——日志收尾异常绝不允许顶替业务异常（`recordOn=ERROR` 的审计恰恰依赖这点）。

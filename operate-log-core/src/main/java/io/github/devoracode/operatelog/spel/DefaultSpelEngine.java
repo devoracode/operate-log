@@ -74,7 +74,7 @@ public class DefaultSpelEngine implements SpelEngine {
             return spelExpression.getValue(createEvaluationContext(context));
         } catch (Throwable ex) {
             // businessId 允许为空：表达式失败降级为 null
-            logDegraded("evaluate", expression, ex);
+            logDegraded("evaluate", ex);
             return null;
         }
     }
@@ -93,7 +93,7 @@ public class DefaultSpelEngine implements SpelEngine {
             return spelExpression.getValue(createEvaluationContext(context), String.class);
         } catch (Throwable ex) {
             // 模板求值失败：输出原文
-            logDegraded("evaluateTemplate", template, ex);
+            logDegraded("evaluateTemplate", ex);
             return template;
         }
     }
@@ -113,18 +113,14 @@ public class DefaultSpelEngine implements SpelEngine {
             return Boolean.TRUE.equals(result);
         } catch (Throwable ex) {
             // 条件求值失败：宁可多记不可漏记，视为通过
-            logDegraded("evaluateBoolean", expression, ex);
+            logDegraded("evaluateBoolean", ex);
             return true;
         }
     }
 
-    private void logDegraded(String operation, String expression, Throwable ex) {
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("operate-log: SpEL '{}' failed for expression [{}], degraded.",
-                    operation,
-                    expression,
-                    ex);
-        }
+    private void logDegraded(String operation, Throwable ex) {
+        LOGGER.debug("operate-log: SpEL '{}' failed, degraded (exceptionType={}).",
+                operation, ex.getClass().getName());
     }
 
     private Expression getExpression(String value, boolean template) {

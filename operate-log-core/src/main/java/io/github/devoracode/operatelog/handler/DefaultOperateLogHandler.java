@@ -23,12 +23,10 @@ public class DefaultOperateLogHandler implements OperateLogHandler {
         try {
             LOGGER.info("operate-log={}", this.objectMapper.writeValueAsString(record));
         } catch (Exception | StackOverflowError ex) {
-            // 记录在序列化失败时本就丢了，重试无意义；而失败往往是持续性的（宿主 Jackson 配置
-            // 某类值一律写不出），逐次带全栈会把日志冲垮。故只在首次给出堆栈，之后只报累计次数。
             long failures = this.serializationFailures.incrementAndGet();
             if (failures == 1L) {
-                LOGGER.warn("Failed to serialize operation log; later failures of this kind "
-                        + "are reported without a stack trace.", ex);
+                LOGGER.warn("Failed to serialize operation log (exceptionType={}); later failures are reported as a count.",
+                        ex.getClass().getName());
             } else {
                 LOGGER.warn("Failed to serialize operation log ({} failures so far).", failures);
             }

@@ -36,6 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -146,6 +148,21 @@ class OperateLogBoot2NonWebContextTest {
         assertEquals("[\"visible\",\"[hidden]\",\"[hidden]\",\"[hidden]\",null]", text(lastRecord(), "requestBody"));
     }
 
+    @Test
+    void writingAnExceptionMasksTheEntireCredentialAndRethrowsTheSameException() {
+        IllegalStateException failure = new IllegalStateException("Authorization: Bearer test-credential");
+
+        assertSame(failure, assertThrows(IllegalStateException.class,
+                () -> this.context.getBean(ProtectedLogging.class).fail(failure)));
+
+        Map<String, Object> record = lastRecord();
+        assertEquals("Authorization: [hidden]", text(record, "errorMessage"));
+        String stack = text(record, "errorStack");
+        assertTrue(stack.contains("Authorization: [hidden]"));
+        assertFalse(stack.contains("test-credential"));
+        assertTrue(stack.contains("\tat "));
+    }
+
     @TestConfiguration
     static class ProtectedLoggingConfiguration {
         @Bean
@@ -159,6 +176,11 @@ class OperateLogBoot2NonWebContextTest {
         public List<String> namedArguments(String visible, String password, @RequestParam("accessToken") String submitted,
                                            String pinCode, String optional) {
             return Arrays.asList(visible, password, submitted, pinCode, optional);
+        }
+
+        @OperateLog(recordRequest = false)
+        public void fail(RuntimeException failure) {
+            throw failure;
         }
     }
 

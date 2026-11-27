@@ -175,7 +175,7 @@ public void cancel(String orderNo) { ... }
 | --- | --- |
 | `#p0`、`#p1`... | 按位置的方法参数 |
 | `#a0`、`#a1`... | 同 `#p0`（别名） |
-| `#参数名` | 方法参数名（依赖调试信息，`javac -g` / IDE 默认开启） |
+| `#参数名` | 方法参数名（依赖编译时保留参数名；应用需启用 `-parameters`，本项目已在 Maven 编译配置中启用） |
 | `#result` | 方法返回值（异常时为 `null`） |
 | `#error` | 异常对象（正常时为 `null`） |
 | `#success` | 是否成功（`boolean`） |

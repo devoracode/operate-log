@@ -52,6 +52,13 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <!-- 模拟宿主同时带有两种 Servlet API，验证 Spring Web 仍选择 javax 栈。 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>5.0.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

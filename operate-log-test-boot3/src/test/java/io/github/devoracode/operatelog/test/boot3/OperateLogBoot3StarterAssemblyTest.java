@@ -16,9 +16,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.FilteredClassLoader;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.util.ClassUtils;
 import org.springframework.util.StreamUtils;
 
 import java.io.ByteArrayInputStream;
@@ -48,32 +50,45 @@ class OperateLogBoot3StarterAssemblyTest {
             .withConfiguration(AutoConfigurations.of(OperateLogAutoConfiguration.class));
 
     @Test
-    void jakartaStackSelectedOnBoot3Classpath() {
-        this.runner.run((context) -> {
-            assertTrue(!context.getBeansOfType(HttpContextResolver.class).isEmpty());
-            // 一个宿主只能有一套实现：两套同时出现说明互斥条件退化成了「bean 方法顺序」
-            assertEquals(1, context.getBeansOfType(HttpContextResolver.class).size());
-            assertEquals(1, context.getBeansOfType(ClientIpResolver.class).size());
-            assertTrue(context.getBean(HttpContextResolver.class) instanceof JakartaHttpContextResolver);
-            assertTrue(context.getBean(ClientIpResolver.class) instanceof JakartaClientIpResolver);
-            assertTrue(context.getBeanNamesForType(OperateLogAspect.class).length == 1);
+    void jakartaStackSelectedWithBothServletApis() {
+        this.runner.run(context -> {
+            assertTrue(ClassUtils.isPresent("javax.servlet.http.HttpServletRequest", context.getClassLoader()));
+            assertJakartaStack(context);
         });
     }
 
     @Test
+    void jakartaStackSelectedWithOnlyItsServletApi() {
+        this.runner.withClassLoader(new FilteredClassLoader("javax.servlet"))
+                .run(OperateLogBoot3StarterAssemblyTest::assertJakartaStack);
+    }
+
+    private static void assertJakartaStack(ApplicationContext context) {
+        assertEquals(1, context.getBeansOfType(HttpContextResolver.class).size());
+        assertEquals(1, context.getBeansOfType(ClientIpResolver.class).size());
+        assertTrue(context.getBean(HttpContextResolver.class) instanceof JakartaHttpContextResolver);
+        assertTrue(context.getBean(ClientIpResolver.class) instanceof JakartaClientIpResolver);
+        assertEquals(1, context.getBeanNamesForType(OperateLogAspect.class).length);
+    }
+
+    @Test
     void fallbackSelectedWhenNoServletApiPresent() {
-        this.runner.withClassLoader(new FilteredClassLoader(jakarta.servlet.http.HttpServletRequest.class))
-                .run((context) -> {
-                    // getStartupFailure() 返回 Throwable，不是 Optional（Boot 2 / 3 皆如此）
-                    assertNull(context.getStartupFailure(),
-                            "无 Servlet API 时也必须正常启动: " + context.getStartupFailure());
-                    HttpContextResolver resolver = context.getBean(HttpContextResolver.class);
-                    assertTrue(resolver.resolve() == null, "兜底实现必须返回 null");
-                    assertTrue(context.getBean(ClientIpResolver.class).resolve() == null, "兜底 IP 必须为 null");
-                    // 兜底实现不得是任一栈的类（否则非 Web 应用会因类加载失败而启动不了）
-                    assertTrue(!(resolver instanceof JakartaHttpContextResolver));
-                    assertTrue(context.getBeansOfType(OperateLogAspect.class).size() == 1);
-                });
+        this.runner.withClassLoader(new FilteredClassLoader("javax.servlet", "jakarta.servlet"))
+                .run(OperateLogBoot3StarterAssemblyTest::assertFallback);
+    }
+
+    @Test
+    void fallbackSelectedWhenSpringWebIsAbsent() {
+        this.runner.withClassLoader(new FilteredClassLoader("org.springframework.web"))
+                .run(OperateLogBoot3StarterAssemblyTest::assertFallback);
+    }
+
+    private static void assertFallback(ApplicationContext context) {
+        assertSame(context.getBean("operateLogFallbackHttpContextResolver"), context.getBean(HttpContextResolver.class));
+        assertSame(context.getBean("operateLogFallbackClientIpResolver"), context.getBean(ClientIpResolver.class));
+        assertNull(context.getBean(HttpContextResolver.class).resolve());
+        assertNull(context.getBean(ClientIpResolver.class).resolve());
+        assertEquals(1, context.getBeansOfType(OperateLogAspect.class).size());
     }
 
     @Test

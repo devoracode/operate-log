@@ -28,22 +28,26 @@ import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Condition;
+import org.springframework.context.annotation.ConditionContext;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.type.AnnotatedTypeMetadata;
+import org.springframework.util.ClassUtils;
 
 /**
  * 操作日志自动配置（Boot 2.x / 3.x 双栈通用）。本类只做总开关与属性绑定，
  * bean 按职责分入四个内部配置类。
  *
- * <p>三个 Servlet 配置的条件两两互斥，由 classpath 唯一决定：
- * jakarta 存在 → jakarta 栈；只有 javax → javax 栈；两者皆无 → 兜底。</p>
+ * <p>三个 Servlet 配置的条件两两互斥，以宿主 Spring Web 使用的 Servlet API 为准。
+ * 无匹配的 Servlet 栈时使用空实现。</p>
  *
  * <p>硬性纪律：条件 bean 方法的返回 / 参数类型只能用 core 接口与跨栈类型
  * （签名里出现栈专属实现类会在条件未命中时触发类加载失败）；
- * {@code @ConditionalOnClass} / {@code @ConditionalOnMissingClass} 一律写成字符串形式。</p>
+ * 仅通过类名检查可选依赖是否存在。</p>
  *
  * <p>边界纪律：本配置<b>不注册</b> {@link ObjectMapper} bean。自动配置按类名排序，
  * 本类（{@code io.github...}）排在 Boot 的 {@code JacksonAutoConfiguration}（{@code org.springframework.boot...}）
@@ -204,11 +208,8 @@ public class OperateLogAutoConfiguration {
         }
     }
 
-    /**
-     * jakarta 栈（Boot 3.x）装配：classpath 存在 {@code jakarta.servlet} 时生效。
-     */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(name = "jakarta.servlet.http.HttpServletRequest")
+    @Conditional(ServletStackCondition.Jakarta.class)
     static class JakartaServletConfiguration {
         /**
          * jakarta 栈客户端 IP 解析器（返回类型必须是 core 接口，理由见类注释）。
@@ -231,13 +232,8 @@ public class OperateLogAutoConfiguration {
         }
     }
 
-    /**
-     * javax 栈（Boot 2.x）装配：存在 {@code javax.servlet} 且<b>不存在</b> {@code jakarta.servlet}
-     * 时生效——后半个条件即「jakarta 优先」，两栈共存时不会重复装配。
-     */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(name = "javax.servlet.http.HttpServletRequest")
-    @ConditionalOnMissingClass("jakarta.servlet.http.HttpServletRequest")
+    @Conditional(ServletStackCondition.Javax.class)
     static class JavaxServletConfiguration {
         /**
          * javax 栈客户端 IP 解析器（返回类型必须是 core 接口，理由见类注释）。
@@ -261,11 +257,10 @@ public class OperateLogAutoConfiguration {
     }
 
     /**
-     * 非 Web 环境兜底：两种 Servlet API 都不存在时生效，
-     * 空实现保证 {@link OperateLogAspect} 的构造注入永远成立。
+     * 找不到宿主 Spring Web 对应的 Servlet API 时提供空实现，保证切面可以创建。
      */
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnMissingClass({"jakarta.servlet.http.HttpServletRequest", "javax.servlet.http.HttpServletRequest"})
+    @Conditional(ServletStackCondition.Fallback.class)
     static class FallbackConfiguration {
         /**
          * 兜底客户端 IP 解析器：恒返回 {@code null}。
@@ -283,6 +278,67 @@ public class OperateLogAutoConfiguration {
         @ConditionalOnMissingBean(HttpContextResolver.class)
         public HttpContextResolver operateLogFallbackHttpContextResolver() {
             return () -> null;
+        }
+    }
+
+    private enum ServletStack {
+        JAKARTA("jakarta.servlet"), JAVAX("javax.servlet"), NONE(null);
+
+        private final String servletPackage;
+
+        ServletStack(String servletPackage) {
+            this.servletPackage = servletPackage;
+        }
+
+        private static ServletStack detect(ClassLoader classLoader) {
+            try {
+                // Servlet API 并存时，以宿主 Spring 编译时使用的监听器接口为准。
+                Class<?> listener = ClassUtils.forName(
+                        "org.springframework.web.context.request.RequestContextListener", classLoader);
+                for (Class<?> listenerInterface : listener.getInterfaces()) {
+                    for (ServletStack stack : values()) {
+                        String api = stack.servletPackage;
+                        if (api != null && listenerInterface.getName().equals(api + ".ServletRequestListener")
+                                && ClassUtils.isPresent(api + ".http.HttpServletRequest", classLoader)) {
+                            return stack;
+                        }
+                    }
+                }
+            } catch (ClassNotFoundException | LinkageError ignored) {
+                // 非 Web 宿主可能缺少 Spring Web 或其对应的 Servlet API。
+            }
+            return NONE;
+        }
+    }
+
+    private abstract static class ServletStackCondition implements Condition {
+        private final ServletStack expected;
+
+        ServletStackCondition(ServletStack expected) {
+            this.expected = expected;
+        }
+
+        @Override
+        public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+            return ServletStack.detect(context.getClassLoader()) == this.expected;
+        }
+
+        static final class Jakarta extends ServletStackCondition {
+            Jakarta() {
+                super(ServletStack.JAKARTA);
+            }
+        }
+
+        static final class Javax extends ServletStackCondition {
+            Javax() {
+                super(ServletStack.JAVAX);
+            }
+        }
+
+        static final class Fallback extends ServletStackCondition {
+            Fallback() {
+                super(ServletStack.NONE);
+            }
         }
     }
 }

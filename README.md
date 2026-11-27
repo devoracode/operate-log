@@ -440,24 +440,19 @@ OperateLogAspect @Around 拦截
 | Spring Boot 2.x（JDK 8+） | `javax.servlet` | `...boot.servlet.javax` 栈 | `META-INF/spring.factories` |
 | Spring Boot 3.x（JDK 17+） | `jakarta.servlet` | `...boot.servlet.jakarta` 栈 | `META-INF/spring/...AutoConfiguration.imports` |
 
-- 装配结构：四个内部配置类，栈间条件**两两互斥**，由 classpath 唯一决定（与声明次序无关）：
+- 装配结构：四个内部配置类，Servlet 栈的条件**两两互斥**：
 
   ```text
   OperateLogAutoConfiguration              operate-log.enabled 总开关 + 属性绑定
   ├── CommonConfiguration                   与栈无关：Serializer / Masker / SpelEngine / PayloadPolicy / Handler / Aspect
-  ├── JakartaServletConfiguration           @ConditionalOnClass(name = "jakarta.servlet.http.HttpServletRequest")
-  ├── JavaxServletConfiguration             @ConditionalOnClass(name = "javax.servlet.http.HttpServletRequest")
-  │                                        + @ConditionalOnMissingClass("jakarta.servlet.http.HttpServletRequest")
-  └── FallbackConfiguration                 @ConditionalOnMissingClass(两种 HttpServletRequest)
+  ├── JakartaServletConfiguration           Spring Web 使用 jakarta.servlet
+  ├── JavaxServletConfiguration             Spring Web 使用 javax.servlet
+  └── FallbackConfiguration                 无可用的 Servlet 栈
   ```
 
-  「jakarta 优先」是 `JavaxServletConfiguration` 上 `@ConditionalOnMissingClass` 的直接结论；
-  兜底实现由「两种 Servlet API 都不存在」命中，保证非 Web 环境切面构造注入永远成立。
-  `@ConditionalOnMissingBean` 在各类里只负责一件事：让位给用户自定义 Bean；
-  栈间互斥与兜底判定全由类级 classpath 条件承担，因此方法与内部类的排列次序不影响装配结果
-  （由两个测试工程的 `...StarterAssemblyTest` 锁死：任一 classpath 组合下都只有一套实现）。
-- 条件注解一律用 `name = "..."` 字符串形式，条件 bean 方法的返回/参数类型只出现 core 接口
-  （栈专属类型只在方法体内 `new`），因此条件未命中那一侧不会触发类加载失败。
+  两种 Servlet API 同时出现在 classpath 时，以宿主 Spring Web 的 `RequestContextListener` 所实现的 Servlet 接口为准。
+  缺少 Spring Web 或对应的 Servlet API 时使用空实现。每套配置中的 `@ConditionalOnMissingBean` 仍会让位给用户自定义 Bean。
+- 可选依赖按类名检查，条件 bean 方法的返回/参数类型只出现 core 接口（栈专属类型只在方法体内 `new`）。
 - Starter 的 Boot / Spring 相关编译依赖全部为 `provided`，不向宿主传递任何 Boot 2.7 坐标，与 Boot 3 宿主零冲突。
 - `operate-log-core` 中 Spring、SLF4J、Jackson 为 `optional`（版本只用于 core 自身编译，
   不进消费者依赖图）；aspectjweaver / commons-lang3 保留 compile 传递

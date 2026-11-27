@@ -37,6 +37,14 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <version>${spring.boot2.version}</version>
             <scope>test</scope>
+            <!-- 测试全部使用 Jupiter；旧 Boot 自带的 Vintage 会拉入低版本 Platform，
+                 与根 POM 固定的 Jupiter 5.8.2 混用后无法启动测试引擎。 -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.junit.vintage</groupId>
+                    <artifactId>junit-vintage-engine</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
 

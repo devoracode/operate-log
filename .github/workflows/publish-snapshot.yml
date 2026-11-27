@@ -1,12 +1,15 @@
 name: Publish SNAPSHOT
 
-# 不直接跟 push：CI 那条 run 全绿后由 workflow_run 接力，避免把没验过的提交推上快照仓库。
+# 自动发布只接力本仓库 main 上通过 CI 的 push；手动发布只能选择 main。
 on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 # 与 release.yml 共用同一组，避免快照与正式发布并发上传 Central 互相踩
 concurrency:
@@ -16,19 +19,48 @@ concurrency:
 jobs:
   # 读版本：非 SNAPSHOT 就整个跳过，绝不把非快照版本推上 Central
   check:
-    # 手动 dispatch 时没有 workflow_run 上下文，直接放行；链式触发只认 CI 的 success
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_sha != '') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     outputs:
       snapshot: ${{ steps.version.outputs.snapshot }}
+      source_sha: ${{ steps.source.outputs.sha }}
     steps:
+      - name: Pin the snapshot commit
+        id: source
+        shell: bash
+        env:
+          CI_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          # GitHub 表达式不区分大小写；在 checkout 前精确区分 main 和 Main。
+          # workflow_run 的 GITHUB_SHA 可能指向后来推送的提交，必须使用上游 CI 的 SHA。
+          case "$GITHUB_EVENT_NAME" in
+            workflow_run)
+              snapshot_ref="refs/heads/$CI_HEAD_BRANCH"
+              snapshot_sha="$CI_HEAD_SHA"
+              ;;
+            workflow_dispatch)
+              snapshot_ref="$GITHUB_REF"
+              snapshot_sha="$GITHUB_SHA"
+              ;;
+            *) exit 1 ;;
+          esac
+          if [[ "$snapshot_ref" != refs/heads/main || ! "$snapshot_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo '::error::Snapshot publishing requires main and a valid commit SHA.'
+            exit 1
+          fi
+          printf 'sha=%s\n' "$snapshot_sha" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
-          # workflow_run 的 github.sha 是触发时默认分支的最新提交，不等于刚跑完 CI 的那次；
-          # 连续两次 push 时会错位，必须钉回 CI 实际验过的 head_sha
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ steps.source.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with:
           java-version: '8'
@@ -46,12 +78,16 @@ jobs:
 
   publish:
     needs: check
-    if: needs.check.outputs.snapshot == 'true'
+    if: >-
+      needs.check.result == 'success' &&
+      needs.check.outputs.source_sha != '' &&
+      needs.check.outputs.snapshot == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.check.outputs.source_sha }}
+          persist-credentials: false
       - name: Set up JDK 8
         uses: actions/setup-java@v4
         with:

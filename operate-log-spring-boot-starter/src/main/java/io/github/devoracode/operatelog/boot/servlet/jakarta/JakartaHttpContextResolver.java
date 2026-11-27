@@ -11,7 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 
 /**
- * jakarta 栈（Boot 3.x）HTTP 上下文解析器：从 {@code RequestContextHolder} 取宿主 request，
+ * Servlet HTTP 上下文解析器：从 {@code RequestContextHolder} 取宿主请求，
  * 采集请求侧快照。
  *
  * <p>只读 request，不采集 response 状态码。</p>
@@ -32,7 +32,7 @@ public class JakartaHttpContextResolver implements HttpContextResolver {
         if (attributes == null) {
             return null;
         }
-        // 二进制兼容通道获取宿主真实 request，再收窄到 jakarta 栈类型
+        // 通过二进制兼容的接口获取宿主请求，再收窄到本栈类型。
         Object requestObject = attributes.resolveReference(RequestAttributes.REFERENCE_REQUEST);
         if (!(requestObject instanceof HttpServletRequest)) {
             return null;

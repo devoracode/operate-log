@@ -5,13 +5,14 @@ import io.github.devoracode.operatelog.resolver.ClientIpResolver;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
+
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * jakarta 栈（Boot 3.x）客户端 IP 解析器。
+ * Servlet 客户端 IP 解析器。
  *
  * <p>一个类只 import 一种 Servlet API（javax/jakarta 混用会在单栈宿主触发
- * {@link NoClassDefFoundError}），两套实现分开，由自动配置按 classpath 装配。</p>
+ * {@link NoClassDefFoundError}），两套实现分开，由自动配置按宿主 Spring Web 使用的 Servlet API 装配。</p>
  *
  * <p>取 request 走 {@code RequestContextHolder} + {@code resolveReference(REFERENCE_REQUEST)}：
  * {@code getRequest()} 的返回类型在 Spring 5.3（javax）与 6（jakarta）描述符不同，
@@ -59,7 +60,7 @@ public class JakartaClientIpResolver implements ClientIpResolver {
         return request.getRemoteAddr();
     }
 
-    /** 当前线程绑定的 jakarta request；非 Web 场景或非本栈宿主返回 {@code null}。 */
+    /** 当前线程绑定的请求；非 Web 场景或非本栈宿主返回 {@code null}。 */
     private HttpServletRequest currentRequest() {
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         if (attributes == null) {

@@ -12,10 +12,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # PR 的最小门禁：整 reactor 在 JDK 8（编译目标下限）+ 默认 Boot 2.7.18 上全量测试，并做 Javadoc 校验。
-  # JDK 8 下 boot3-test profile 不激活，本 job 只跑 boot2 侧用例。
+  # 保留已有的状态检查名称，让引用该检查的分支保护同时覆盖两个基线。
   test:
     name: test (JDK 8, Boot 2.7.18)
+    needs: [jdk8, full-reactor]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both baselines to pass
+        env:
+          JDK8_RESULT: ${{ needs.jdk8.result }}
+          JDK17_RESULT: ${{ needs.full-reactor.result }}
+        run: |
+          if [[ "$JDK8_RESULT" != success || "$JDK17_RESULT" != success ]]; then
+            echo "::error::Baseline checks did not pass (JDK 8: $JDK8_RESULT; JDK 17: $JDK17_RESULT)."
+            exit 1
+          fi
+
+  # JDK 8 下 boot3-test profile 不激活，本 job 只跑 boot2 侧用例。
+  jdk8:
+    name: JDK 8 baseline (Boot 2.7.18)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +53,7 @@ jobs:
           if-no-files-found: ignore
 
   # README「支持的版本」承诺（Boot 2.2-2.7 / 3.0-3.5）由矩阵覆盖各次版本线；
-  # 两个基线 2.7.18 / 3.3.13 已被 test 与下面的 full-reactor 覆盖，不重复跑
+  # 两个基线 2.7.18 / 3.3.13 已由 jdk8 和 full-reactor 覆盖。
   matrix:
     name: test (JDK ${{ matrix.java-version }}, ${{ matrix.property }}=${{ matrix.boot-version }})
     runs-on: ubuntu-latest
@@ -98,14 +114,14 @@ jobs:
           path: '**/target/surefire-reports/**'
           if-no-files-found: ignore
 
-  # 整 reactor 在 JDK 17 上构建：boot3-test profile 自动激活，
-  # Boot 3 用户的环境（jakarta 栈 + 宿主的 Spring 6 / Jackson 2.17）在此覆盖
+  # 整 reactor 在 JDK 17 上构建，boot3-test profile 自动激活，覆盖 Boot 3 宿主。
   full-reactor:
     name: full reactor (JDK 17, Boot 3.3.13)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
+      - name: Check Servlet adapter symmetry
+        run: node .github/scripts/check-servlet-symmetry.mjs
       - uses: actions/setup-java@v4
         with:
           java-version: '17'

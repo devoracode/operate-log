@@ -474,6 +474,8 @@ OperateLogAspect @Around 拦截
   Spring Framework 6 要求 JDK ≥ 17。
 - **Servlet API**：jakarta 实现按 Servlet 5.0 编译，运行于 5.0 / 6.0 / 6.1
   均可（仅使用签名一致的 API）。
+- **PR 检查**：JDK 8 跑 Boot 2 基线和 Javadoc，JDK 17 跑双栈测试并检查两套 Servlet 适配器的源码对称性。
+  原有状态检查 `test (JDK 8, Boot 2.7.18)` 汇总这两个任务，两者都通过时才通过。兼容性矩阵在推送 `main` 或手动触发时运行。
 - 日志字段与扩展点接口只依赖上述版本区间内稳定的公共 API。
 - 提示：截至 2026-09，Boot 2.x / 3.x 各线在**上游均已 OSS 停止维护**，
   安全补丁请自行评估（商业延长支持如 HeroDevs NES 可选）。

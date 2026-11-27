@@ -126,8 +126,8 @@ public class OperateLogAspect {
             targetMethod = AopUtils.getMostSpecificMethod(invocationMethod, targetClass);
             annotation = findOperateLogCached(invocationMethod, targetMethod, targetClass);
         } catch (Throwable ex) {
-            log.warn("operate-log: annotation lookup failed, logging skipped (exceptionType={}).",
-                    ex.getClass().getName());
+            warnQuietly(() -> log.warn("operate-log: annotation lookup failed, logging skipped (exceptionType={}).",
+                    ex.getClass().getName()));
             return joinPoint.proceed();
         }
         if (annotation == null) {
@@ -143,31 +143,31 @@ public class OperateLogAspect {
             context.setStartTime(Instant.now());
             context.setTraceId(resolveTraceId());
         } catch (Throwable ex) {
-            log.warn("operate-log: context initialization failed, logging skipped (exceptionType={}).",
-                    ex.getClass().getName());
+            warnQuietly(() -> log.warn("operate-log: context initialization failed, logging skipped (exceptionType={}).",
+                    ex.getClass().getName()));
             return joinPoint.proceed();
         }
         // 绑定线程上下文后再跑解析器：Resolver 与业务方法都能用 OperateLogContextHolder#putExtra 追加字段
         OperateLogContext previous = OperateLogContextHolder.current();
         OperateLogContextHolder.bind(context);
-        context.setOperator(resolveOperator(context));
-        context.setHttp(resolveHttpContext());
         try {
-            Object result = joinPoint.proceed();
-            context.setResult(result);
-            context.setSuccess(true);
-            return result;
-        } catch (Throwable ex) {
-            context.setError(ex);
-            context.setSuccess(false);
-            throw ex;
-        } finally {
+            context.setOperator(resolveOperator(context));
+            context.setHttp(resolveHttpContext());
             try {
-                finishQuietly(context);
+                Object result = joinPoint.proceed();
+                context.setResult(result);
+                context.setSuccess(true);
+                return result;
+            } catch (Throwable ex) {
+                context.setError(ex);
+                context.setSuccess(false);
+                throw ex;
             } finally {
-                // 嵌套场景恢复外层上下文，避免 ThreadLocal 泄漏与外层丢数据
-                restorePreviousContext(previous);
+                finishQuietly(context);
             }
+        } finally {
+            // 解析与收尾都在清理范围内；嵌套调用恢复外层上下文。
+            restorePreviousContext(previous);
         }
     }
 
@@ -178,8 +178,16 @@ public class OperateLogAspect {
                     .toMillis());
             handleSafely(context);
         } catch (Throwable ex) {
-            log.warn("operate-log: log finalization failed, this record may be lost (exceptionType={}).",
-                    ex.getClass().getName());
+            warnQuietly(() -> log.warn("operate-log: log finalization failed, this record may be lost (exceptionType={}).",
+                    ex.getClass().getName()));
+        }
+    }
+
+    private static void warnQuietly(Runnable diagnostic) {
+        try {
+            diagnostic.run();
+        } catch (Throwable ignored) {
+            // 诊断后端本身也可能失败；重试同一个后端会让故障再次进入业务路径。
         }
     }
 
@@ -272,8 +280,8 @@ public class OperateLogAspect {
             String existing = MDC.get(mdcKey);
             return StringUtils.isNotBlank(existing) ? existing : null;
         } catch (Throwable ex) {
-            log.warn("operate-log: traceId read failed, degraded to null (exceptionType={}).",
-                    ex.getClass().getName());
+            warnQuietly(() -> log.warn("operate-log: traceId read failed, degraded to null (exceptionType={}).",
+                    ex.getClass().getName()));
             return null;
         }
     }
@@ -284,8 +292,8 @@ public class OperateLogAspect {
         } catch (Throwable ex) {
             // 此时 HTTP 解析器和业务方法尚未执行，新上下文只含本次操作人解析器的写入。
             context.getExtra().clear();
-            log.warn("operate-log: operator resolution failed, degraded to null (exceptionType={}).",
-                    ex.getClass().getName());
+            warnQuietly(() -> log.warn("operate-log: operator resolution failed, degraded to null (exceptionType={}).",
+                    ex.getClass().getName()));
             return null;
         }
     }
@@ -294,8 +302,8 @@ public class OperateLogAspect {
         try {
             return this.httpContextResolver.resolve();
         } catch (Throwable ex) {
-            log.warn("operate-log: http context resolution failed, degraded to null (exceptionType={}).",
-                    ex.getClass().getName());
+            warnQuietly(() -> log.warn("operate-log: http context resolution failed, degraded to null (exceptionType={}).",
+                    ex.getClass().getName()));
             return null;
         }
     }
@@ -312,11 +320,11 @@ public class OperateLogAspect {
             OperateLogRecord record = buildRecord(context);
             this.handler.handle(record);
         } catch (Throwable ex) {
-            log.warn("operate-log: failed to build/handle log record for module=[{}], "
+            warnQuietly(() -> log.warn("operate-log: failed to build/handle log record for module=[{}], "
                             + "operation=[{}] (exceptionType={}).",
                     context.getAnnotation().module(),
                     context.getAnnotation().operation(),
-                    ex.getClass().getName());
+                    ex.getClass().getName()));
         }
     }
 
@@ -521,8 +529,8 @@ public class OperateLogAspect {
     private void dropExtra(Map<String, Object> extra, String reason) {
         int droppedKeys = extra.size();
         extra.clear();
-        log.warn("operate-log: extra dropped entirely because {}; {} key(s) lost.",
-                reason, droppedKeys);
+        warnQuietly(() -> log.warn("operate-log: extra dropped entirely because {}; {} key(s) lost.",
+                reason, droppedKeys));
     }
 
     private ExtraEntry measureExtraEntry(String key, Object value) {

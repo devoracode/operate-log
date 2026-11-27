@@ -56,6 +56,7 @@ public class OperateLogAspect {
     private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
     private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
+    private static final String TRUNCATED_SUFFIX = "...[truncated]";
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
     private final HttpContextResolver httpContextResolver;
@@ -347,10 +348,16 @@ public class OperateLogAspect {
         }
         // 异常 message 是纯文本（非 JSON），走 plainText 脱敏路径
         String errorMessage = error == null ? null : error.getMessage();
-        String errorStack = error == null ? null : getStackTrace(error);
+        LimitedStringWriter stackTraceCapture = error == null ? null : getStackTrace(error);
+        String errorStack = stackTraceCapture == null ? null : stackTraceCapture.toString();
         if (this.maskEnabled) {
             errorMessage = this.sensitiveDataMasker.maskPlainText(errorMessage);
             errorStack = this.sensitiveDataMasker.maskPlainText(errorStack);
+        }
+        if (stackTraceCapture != null && stackTraceCapture.isTruncated()) {
+            errorStack = markTruncated(errorStack, this.payloadPolicy.getMaxErrorLength());
+        } else {
+            errorStack = this.payloadPolicy.truncateErrorStack(errorStack);
         }
         String userAgent = httpContext == null ? null : httpContext.getUserAgent();
         // 截断在脱敏之后：脱敏可能改变长度，先截断会越界；query/userAgent 同为客户端可控输入，一并受 request 上限保护
@@ -389,7 +396,7 @@ public class OperateLogAspect {
                 .endTime(context.getEndTime())
                 .errorType(error == null ? null : error.getClass().getName())
                 .errorMessage(this.payloadPolicy.truncateErrorMessage(errorMessage))
-                .errorStack(this.payloadPolicy.truncateErrorStack(errorStack))
+                .errorStack(errorStack)
                 .extra(extra)
                 .build();
     }
@@ -399,12 +406,28 @@ public class OperateLogAspect {
         return value == null ? null : String.valueOf(value);
     }
 
-    private String getStackTrace(Throwable throwable) {
-        StringWriter writer = new LimitedStringWriter(this.payloadPolicy.getMaxErrorLength());
+    private LimitedStringWriter getStackTrace(Throwable throwable) {
+        LimitedStringWriter writer = new LimitedStringWriter(this.payloadPolicy.getMaxErrorLength());
         PrintWriter printWriter = new PrintWriter(writer);
         throwable.printStackTrace(printWriter);
         printWriter.flush();
-        return writer.toString();
+        return writer;
+    }
+
+    private String markTruncated(String value, int maxLength) {
+        if (value == null || maxLength <= 0) {
+            return value;
+        }
+        if (maxLength < TRUNCATED_SUFFIX.length()) {
+            return PayloadPolicy.truncate(value, maxLength);
+        }
+        int contentLimit = maxLength - TRUNCATED_SUFFIX.length();
+        int cutIndex = Math.min(value.length(), contentLimit);
+        if (cutIndex > 0 && cutIndex < value.length()
+                && Character.isHighSurrogate(value.charAt(cutIndex - 1))) {
+            cutIndex--;
+        }
+        return value.substring(0, cutIndex) + TRUNCATED_SUFFIX;
     }
 
     private Map<String, Object> normalizeExtra(Map<String, Object> source) {
@@ -572,6 +595,7 @@ public class OperateLogAspect {
 
     private static final class LimitedStringWriter extends StringWriter {
         private final int limit;
+        private boolean truncated;
 
         private LimitedStringWriter(int limit) {
             // limit<=0（不截断）同样按 8192 预分配：初始 256 会让大堆栈多次扩容拷贝，高频异常场景放大 GC 压力
@@ -583,6 +607,8 @@ public class OperateLogAspect {
         public void write(int c) {
             if (this.limit <= 0 || getBuffer().length() < this.limit) {
                 super.write(c);
+            } else {
+                this.truncated = true;
             }
         }
 
@@ -596,6 +622,9 @@ public class OperateLogAspect {
             if (remaining > 0) {
                 super.write(cbuf, off, Math.min(len, remaining));
             }
+            if (len > remaining) {
+                this.truncated = true;
+            }
         }
 
         @Override
@@ -608,6 +637,13 @@ public class OperateLogAspect {
             if (remaining > 0) {
                 super.write(str, off, Math.min(len, remaining));
             }
+            if (len > remaining) {
+                this.truncated = true;
+            }
+        }
+
+        private boolean isTruncated() {
+            return this.truncated;
         }
     }
 }

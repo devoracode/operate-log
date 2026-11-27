@@ -83,6 +83,8 @@ class OperateLogBoot3ErrorStackTruncationTest {
         assertTrue(text(record, "errorStack").contains("demo failure"));
         assertTrue(text(record, "errorStack").length() <= MAX_ERROR_LENGTH,
                 "errorStack 不得越界: " + text(record, "errorStack").length());
+        assertTrue(text(record, "errorStack").endsWith("...[truncated]"),
+                "errorStack 超限时必须显式标记截断: " + text(record, "errorStack"));
         assertFalse(flag(record, "success"));
     }
 
@@ -97,6 +99,7 @@ class OperateLogBoot3ErrorStackTruncationTest {
         assertTrue(stack.length() <= MAX_ERROR_LENGTH, stack);
         assertFalse(stack.contains("TOP_SECRET_VALUE_1234567890"), stack);
         assertTrue(stack.contains("******"), stack);
+        assertTrue(stack.endsWith("...[truncated]"), stack);
     }
 
     private int countRecords() {

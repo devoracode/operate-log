@@ -163,24 +163,33 @@ public class PayloadPolicy {
      * @return 截断结果；无需截断时原样返回 {@code value}
      */
     public static String truncate(String value, int maxLength) {
-        if (value == null || maxLength <= 0 || value.length() <= maxLength) {
-            return value;
-        }
-        int suffixLength = TRUNCATED_SUFFIX.length();
-        if (maxLength < suffixLength) {
-            // 额度装不下截断标记（严格小于）：守住长度上限，放弃标记
-            return value.substring(0, safeCutIndex(value, maxLength));
-        }
-        return value.substring(0, safeCutIndex(value, maxLength - suffixLength)) + TRUNCATED_SUFFIX;
+        return truncate(value, maxLength, false);
     }
 
-    // 截断点若落在代理对中间（前一个 code unit 是 high surrogate）回退一位，
-    // 否则孤立 surrogate 经 UTF-8 编码会成 U+FFFD 乱码甚至抛异常
-    private static int safeCutIndex(String value, int cutIndex) {
-        if (cutIndex <= 0) {
-            return 0;
+    /**
+     * 标记采集时已截断的堆栈，即使脱敏后的文本未超限也保留截断信息。
+     *
+     * @param value 脱敏后的堆栈前缀，可为 {@code null}
+     * @param maxLength 含截断标记在内的长度上限，无法容纳标记时只保留前缀
+     * @return 可交给 {@link #truncateErrorStack(String)} 继续处理的堆栈
+     */
+    public static String markCapturedStackTruncated(String value, int maxLength) {
+        return truncate(value, maxLength, true);
+    }
+
+    private static String truncate(String value, int maxLength, boolean sourceTruncated) {
+        if (value == null || maxLength <= 0 || (!sourceTruncated && value.length() <= maxLength)) {
+            return value;
         }
-        if (cutIndex < value.length() && Character.isHighSurrogate(value.charAt(cutIndex - 1))) {
+        String suffix = maxLength < TRUNCATED_SUFFIX.length() ? "" : TRUNCATED_SUFFIX;
+        int cutIndex = Math.min(value.length(), maxLength - suffix.length());
+        return value.substring(0, safeCutIndex(value, cutIndex, sourceTruncated)).concat(suffix);
+    }
+
+    // 采集截断时，当前文本末尾也可能只剩代理对的前半个字符。
+    private static int safeCutIndex(String value, int cutIndex, boolean sourceTruncated) {
+        if (cutIndex > 0 && (cutIndex < value.length() || sourceTruncated)
+                && Character.isHighSurrogate(value.charAt(cutIndex - 1))) {
             return cutIndex - 1;
         }
         return cutIndex;

@@ -58,7 +58,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class OperateLogAspect {
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
     private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
-    private static final String TRUNCATED_SUFFIX = "...[truncated]";
     private final OperateLogHandler handler;
     private final OperatorResolver operatorResolver;
     private final HttpContextResolver httpContextResolver;
@@ -359,10 +358,9 @@ public class OperateLogAspect {
             errorStack = this.sensitiveDataMasker.maskPlainText(errorStack);
         }
         if (stackTraceCapture != null && stackTraceCapture.isTruncated()) {
-            errorStack = markTruncated(errorStack, this.payloadPolicy.getMaxErrorLength());
-        } else {
-            errorStack = this.payloadPolicy.truncateErrorStack(errorStack);
+            errorStack = PayloadPolicy.markCapturedStackTruncated(errorStack, this.payloadPolicy.getMaxErrorLength());
         }
+        errorStack = this.payloadPolicy.truncateErrorStack(errorStack);
         String userAgent = httpContext == null ? null : httpContext.getUserAgent();
         // 截断在脱敏之后：脱敏可能改变长度，先截断会越界；query/userAgent 同为客户端可控输入，一并受 request 上限保护
         requestHeaders = this.payloadPolicy.truncateRequest(requestHeaders);
@@ -416,22 +414,6 @@ public class OperateLogAspect {
         throwable.printStackTrace(printWriter);
         printWriter.flush();
         return writer;
-    }
-
-    private String markTruncated(String value, int maxLength) {
-        if (value == null || maxLength <= 0) {
-            return value;
-        }
-        if (maxLength < TRUNCATED_SUFFIX.length()) {
-            return PayloadPolicy.truncate(value, maxLength);
-        }
-        int contentLimit = maxLength - TRUNCATED_SUFFIX.length();
-        int cutIndex = Math.min(value.length(), contentLimit);
-        if (cutIndex > 0 && cutIndex < value.length()
-                && Character.isHighSurrogate(value.charAt(cutIndex - 1))) {
-            cutIndex--;
-        }
-        return value.substring(0, cutIndex) + TRUNCATED_SUFFIX;
     }
 
     private Map<String, Object> normalizeExtra(Map<String, Object> source) {

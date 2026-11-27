@@ -3,25 +3,36 @@ package io.github.devoracode.operatelog.test.boot2;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.github.devoracode.operatelog.annotation.OperateLog;
+import io.github.devoracode.operatelog.aspect.OperateLogAspect;
 import io.github.devoracode.operatelog.handler.DefaultOperateLogHandler;
+import io.github.devoracode.operatelog.model.OperateLogRecord;
+import io.github.devoracode.operatelog.payload.PayloadPolicy;
+import io.github.devoracode.operatelog.spel.DefaultSpelEngine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.Map;
+import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import static io.github.devoracode.operatelog.test.boot2.LogRecords.text;
 import static io.github.devoracode.operatelog.test.boot2.LogRecords.flag;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
@@ -100,6 +111,57 @@ class OperateLogBoot2ErrorStackTruncationTest {
         assertFalse(stack.contains("TOP_SECRET_VALUE_1234567890"), stack);
         assertTrue(stack.contains("******"), stack);
         assertTrue(stack.endsWith("...[truncated]"), stack);
+    }
+
+    @Test
+    void customPolicyProcessesBothCompleteAndBoundedStacks() {
+        int limit = 32;
+        List<String> inputs = new ArrayList<>();
+        List<OperateLogRecord> records = new ArrayList<>();
+        PayloadPolicy policy = new PayloadPolicy(0, 0, limit, 0, Collections.emptyList()) {
+            @Override
+            public String truncateErrorStack(String value) {
+                inputs.add(value);
+                return "<hidden>";
+            }
+        };
+        AspectJProxyFactory factory = new AspectJProxyFactory(new StackFailureService());
+        factory.addAspect(new OperateLogAspect(records::add, () -> null, () -> null,
+                null, null, new DefaultSpelEngine(), "test", "test", null, false, policy, null, 64));
+        StackFailureService service = factory.getProxy();
+
+        String longStack = String.join("", Collections.nCopies(100, "a"));
+        for (String stack : Arrays.asList("short stack", longStack)) {
+            IllegalStateException failure = new IllegalStateException("business failure") {
+                @Override
+                public void printStackTrace(PrintWriter writer) {
+                    writer.write(stack);
+                }
+            };
+            assertSame(failure, assertThrows(IllegalStateException.class, () -> service.fail(failure)));
+        }
+
+        assertEquals(Arrays.asList("short stack", PayloadPolicy.truncate(longStack, limit)), inputs);
+        assertEquals(2, records.size());
+        records.forEach(record -> assertEquals("<hidden>", record.getErrorStack()));
+    }
+
+    @Test
+    void truncatedCaptureHonorsSmallBudgetsAndSurrogateBoundaries() {
+        String marker = "...[truncated]";
+        String pair = "\uD83D\uDE00";
+        assertEquals("a", PayloadPolicy.markCapturedStackTruncated("a\uD83D", 2));
+        assertEquals("a" + pair, PayloadPolicy.markCapturedStackTruncated("a" + pair, 3));
+        assertEquals(marker, PayloadPolicy.markCapturedStackTruncated("abc", marker.length()));
+        assertEquals("a" + marker, PayloadPolicy.markCapturedStackTruncated("a" + pair, marker.length() + 2));
+        assertEquals("masked" + marker, PayloadPolicy.markCapturedStackTruncated("masked", 32));
+    }
+
+    static class StackFailureService {
+        @OperateLog(recordRequest = false)
+        public void fail(IllegalStateException failure) {
+            throw failure;
+        }
     }
 
     private int countRecords() {

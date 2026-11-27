@@ -82,6 +82,9 @@ public class OperateLogProperties {
     @Data
     public static class Payload {
 
+        /** 默认序列化器单次 JSON 写出预算（字符），<=0 不限；独立于最终字段长度上限。 */
+        private int maxSerializationLength = 0;
+
         /** requestBody / requestHeaders 最大字符数（含截断标记），<=0 不截断。 */
         private int maxRequestLength = 0;
 

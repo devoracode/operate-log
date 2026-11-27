@@ -220,6 +220,7 @@ operate-log:
       - mobile
       - idCard
   payload:                        # 载荷防护
+    max-serialization-length: 0   # 默认序列化器单次 JSON 写出预算（字符），<=0 不限
     max-request-length: 0         # requestBody / requestHeaders / requestQuery / userAgent 最大字符数，<=0 不截断
     max-response-length: 0        # responseBody 最大字符数，<=0 不截断
     max-error-length: 0           # errorStack / errorMessage 最大字符数，<=0 不截断
@@ -241,6 +242,7 @@ operate-log:
 | `operate-log.mask.enabled` | `false` | 脱敏总开关，**默认关闭**——宿主若已有自己的脱敏方案，保持关闭即可避免重复处理、让日志保留原值可查；需要本组件兜底时置 `true`。作用于 `requestHeaders` / `requestBody` / `responseBody` 三个 JSON 字段、`requestQuery`（按参数名匹配）、`errorMessage` / `errorStack`（纯文本子串匹配）。**不作用于 `extra`**——见字段表说明 |
 | `operate-log.mask.mask-text` | `******` | 替换文本 |
 | `operate-log.mask.fields` | 空 | 在 16 个内置默认字段之外**追加**的脱敏字段名（匹配忽略大小写）。默认字段始终生效，无法通过配置移除 |
+| `operate-log.payload.max-serialization-length` | `0` | 默认序列化器的 JSON 写出预算（字符），`<=0` 不限。超限时停止当前序列化，整组入参记为 `["<SERIALIZATION_LIMIT>"]`，单值走序列化失败的占位路径。各字段最终长度上限仍单独生效；自定义序列化器需自行实施预算 |
 | `operate-log.payload.max-request-length` | `0` | `requestBody` / `requestHeaders` / `requestQuery` / `userAgent` 最大字符数，`<=0` 不截断；超限时截断为**恰好该长度**（`...[truncated]` 标记计入上限，不外挂） |
 | `operate-log.payload.max-response-length` | `0` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
 | `operate-log.payload.max-error-length` | `0` | `errorStack` / `errorMessage` 最大字符数，`<=0` 不截断 |
@@ -248,6 +250,9 @@ operate-log:
 | `operate-log.payload.ignore-types` | 19 项内置 | 在内置安全类型之外**追加**序列化时跳过的类型（全限定类名，父类/接口命中即算），入参与返回值两侧都生效，替换为 `<IGNORED:类型简名>`；内置集合包含 `Iterator` 和 `BaseStream`，无法通过配置移除，如需不同集合请注册自定义 `PayloadPolicy` bean。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
 
 > **升级提示**：`payload.ignore-types` 已从“整体替换”改为“追加”，内置安全防护无法再通过配置移除；必须自定义完整集合时，请改注册 `PayloadPolicy` bean。
+
+序列化预算限制的是 Jackson 写出的字符，无法限制 getter 的执行时间或阻止 ORM 延迟加载。
+需要采集大对象时，优先用字段和集合规模明确的 DTO，或按方法关闭入参/返回值记录。
 >
 > **脱敏默认值变更**：`operate-log.mask.enabled` 由 `true` 改为 `false`。宿主若没有自己的脱敏方案，**升级后 `password` / `token` / `authorization` 等内置默认字段会以原值进日志**，请显式配置 `operate-log.mask.enabled: true` 保持原行为。
 
@@ -481,7 +486,7 @@ OperateLogAspect @Around 拦截
 
 当前版本不包含（可按需向社区提 PR 或等待后续版本）：
 
-- 异步 / 批量 Handler（当前 Handler 同步调用，自定义异步 Handler 可实现等价效果）。
+- 异步 / 批量 Handler（当前 Handler 同步调用；自定义 Handler 访问外部存储时应设超时，异步时使用有界队列并明确队满策略）。
 - 内置 JDBC / MQ / Redis / ES Handler（请通过 `OperateLogHandler` 扩展点自行落地）。
 - 注解只支持方法级（`@Target(METHOD)`）：不提供类级标注与「类级默认值继承」。需要整类全量审计时，
   自行注册 `OperateLogAspect` / 扩大切点，而不是把注解贴到类上。

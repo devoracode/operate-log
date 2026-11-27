@@ -1,7 +1,9 @@
 package io.github.devoracode.operatelog.serializer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.commons.lang3.ArrayUtils;
+
+import java.io.IOException;
+import java.io.Writer;
 
 /**
  * 默认序列化器：用 Jackson {@link ObjectMapper} 把对象写成 JSON 文本。
@@ -12,11 +14,19 @@ import org.apache.commons.lang3.ArrayUtils;
  */
 public class DefaultOperateLogSerializer implements OperateLogSerializer {
     private static final String UNSERIALIZABLE = "<UNSERIALIZABLE>";
+    private static final String LIMIT_REACHED = "<SERIALIZATION_LIMIT>";
+    private static final String LIMITED_ARGUMENTS = "[\"<SERIALIZATION_LIMIT>\"]";
 
     private final ObjectMapper objectMapper;
+    private final int maxSerializationLength;
 
     public DefaultOperateLogSerializer(ObjectMapper objectMapper) {
+        this(objectMapper, 0);
+    }
+
+    public DefaultOperateLogSerializer(ObjectMapper objectMapper, int maxSerializationLength) {
         this.objectMapper = objectMapper;
+        this.maxSerializationLength = maxSerializationLength;
     }
 
     @Override
@@ -24,49 +34,108 @@ public class DefaultOperateLogSerializer implements OperateLogSerializer {
         if (value == null) {
             return null;
         }
-        String serialized = writeQuietly(value);
-        return serialized == null ? UNSERIALIZABLE : serialized;
+        String serialized = writeQuietly(value, this.maxSerializationLength);
+        return serialized == null || LIMIT_REACHED.equals(serialized) ? UNSERIALIZABLE : serialized;
     }
 
     @Override
     public String serializeArguments(Object[] arguments) {
-        if (ArrayUtils.isEmpty(arguments)) {
-            return serialize(arguments);
+        if (arguments == null) {
+            return null;
         }
-        String whole = writeQuietly(arguments);
+        String whole = writeQuietly(arguments, this.maxSerializationLength);
+        if (LIMIT_REACHED.equals(whole)) {
+            return LIMITED_ARGUMENTS;
+        }
         if (whole != null) {
             return whole;
         }
-        StringBuilder sb = new StringBuilder(arguments.length * 32);
+        if (arguments.length == 0) {
+            return UNSERIALIZABLE;
+        }
+        StringBuilder sb = new StringBuilder(Math.min(arguments.length, 8) * 32);
         sb.append('[');
         for (int i = 0; i < arguments.length; i++) {
             if (i > 0) {
                 sb.append(',');
             }
             Object argument = arguments[i];
-            if (argument == null) {
-                sb.append("null");
-            } else {
-                String element = writeQuietly(argument);
-                if (element == null) {
-                    sb.append("\"<UNSERIALIZABLE:")
-                            .append(argument.getClass().getSimpleName())
-                            .append(">\"");
-                } else {
-                    sb.append(element);
-                }
+            // 逐元素降级仍按整组计费；预留结尾的 ]。
+            int remaining = this.maxSerializationLength > 0
+                    ? this.maxSerializationLength - sb.length() - 1 : 0;
+            if (this.maxSerializationLength > 0 && remaining <= 0) {
+                return LIMITED_ARGUMENTS;
             }
+            String element = argument == null ? "null" : writeQuietly(argument, remaining);
+            if (LIMIT_REACHED.equals(element)) {
+                return LIMITED_ARGUMENTS;
+            }
+            if (element == null) {
+                element = "\"<UNSERIALIZABLE:" + argument.getClass().getSimpleName() + ">\"";
+            }
+            if (remaining > 0 && element.length() > remaining) {
+                return LIMITED_ARGUMENTS;
+            }
+            sb.append(element);
         }
         sb.append(']');
         return sb.toString();
     }
 
-    /** 静默序列化：成功返回 JSON，任何失败返回 {@code null} 交由调用方降级。 */
-    private String writeQuietly(Object value) {
+    private String writeQuietly(Object value, int limit) {
+        BoundedWriter writer = limit > 0 ? new BoundedWriter(limit) : null;
         try {
-            return this.objectMapper.writeValueAsString(value);
+            if (writer == null) {
+                return this.objectMapper.writeValueAsString(value);
+            }
+            this.objectMapper.writeValue(writer, value);
+            return writer.exceeded ? LIMIT_REACHED : writer.buffer.toString();
         } catch (Exception | StackOverflowError ex) {
-            return null;
+            return writer != null && writer.exceeded ? LIMIT_REACHED : null;
+        }
+    }
+
+    private static final class BoundedWriter extends Writer {
+        private final int limit;
+        private final StringBuilder buffer;
+        private boolean exceeded;
+
+        private BoundedWriter(int limit) {
+            this.limit = limit;
+            this.buffer = new StringBuilder(Math.min(limit, 256));
+        }
+
+        @Override
+        public void write(int character) throws IOException {
+            requireCapacity(1);
+            this.buffer.append((char) character);
+        }
+
+        @Override
+        public void write(char[] characters, int offset, int length) throws IOException {
+            requireCapacity(length);
+            this.buffer.append(characters, offset, length);
+        }
+
+        @Override
+        public void write(String value, int offset, int length) throws IOException {
+            requireCapacity(length);
+            this.buffer.append(value, offset, offset + length);
+        }
+
+        private void requireCapacity(int length) throws IOException {
+            if (this.exceeded || length > this.limit - this.buffer.length()) {
+                this.exceeded = true;
+                throw new IOException("Operation log serialization budget exhausted");
+            }
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() {
         }
     }
 }

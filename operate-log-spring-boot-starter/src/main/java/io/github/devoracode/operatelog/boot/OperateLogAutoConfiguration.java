@@ -86,8 +86,8 @@ public class OperateLogAutoConfiguration {
          */
         @Bean
         @ConditionalOnMissingBean(OperateLogSerializer.class)
-        public OperateLogSerializer operateLogSerializer() {
-            return new DefaultOperateLogSerializer(safeTimeMapper());
+        public OperateLogSerializer operateLogSerializer(OperateLogProperties properties) {
+            return new DefaultOperateLogSerializer(safeTimeMapper(), properties.getPayload().getMaxSerializationLength());
         }
 
         /**

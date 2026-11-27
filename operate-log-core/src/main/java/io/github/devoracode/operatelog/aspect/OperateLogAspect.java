@@ -48,8 +48,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>业务零影响：日志侧故障只以 warn / debug 暴露，业务异常原样透传，{@code finally} 收尾不外抛。</p>
  *
- * <p>{@code success} 仅表示「业务方法未抛异常」，<b>不含</b>事务提交结果：若事务通知位于本切面内层，
- * 回滚时日志仍记为成功。要求审计一致需让事务通知位于外层，或改用延后落地的 {@code OperateLogHandler}。</p>
+ * <p>{@code success} 表示本切面观察到的调用是否正常返回，不能作为事务提交结果。
+ * 外层事务可能在日志落地后才提交，正常返回也可能回滚。需要最终事务结果时，宿主须在事务同步激活时
+ * 注册回调，在 {@code TransactionSynchronization.afterCompletion} 中按完成状态落地。</p>
  */
 @Aspect
 @Order

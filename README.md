@@ -489,11 +489,16 @@ OperateLogAspect @Around 拦截
 - CGLIB 代理 + 注解仅标注接口方法（advice 不织入，见「注解属性」处的说明；JDK 代理场景已支持接口注解查找）。
 - 不记录 HTTP 状态码：切面时刻取不到最终值，`ResponseEntity` / `@ResponseStatus` /
   `@ControllerAdvice` 改写的状态一律不在审计日志里，见「为什么没有 `httpStatus`」。
-- `success` 的语义边界是「业务方法未抛异常」，**不含事务提交结果**：切面顺序已显式声明为
-  `Ordered.LOWEST_PRECEDENCE`（不再依赖默认值推断），但与 `@Transactional` 的默认顺序**同值**，
-  两级通知的相对次序不由本组件保证。事务提交失败并回滚时，日志可能已写为 `success = true`。
-  审计判据需要与事务结果一致时，请勿直接采信 `success`，应为事务通知显式指定更低 order
-  （使其位于本切面外层），或改用自定义 `OperateLogHandler` 延后落地。
+- `success` 表示日志切面观察到的调用是否正常返回，**不能作为事务提交结果**。切面与事务通知的默认顺序
+  均为 `Ordered.LOWEST_PRECEDENCE`，相对次序没有保证。事务通知位于外层时，日志可能在事务提交前就已落地；
+  位于内层时，提交异常如果向外传播，切面可以记录到异常。即使 `success = true`，事务仍可能因被标记为
+  `rollback-only` 而回滚，或等待外层事务完成。
+- 需要按事务结果审计时，在实际事务和事务同步均已激活时，注册 `TransactionSynchronization`，
+  在 `afterCompletion(status)` 中按 `STATUS_COMMITTED`、`STATUS_ROLLED_BACK` 或 `STATUS_UNKNOWN` 落地。
+  例如给事务通知较小的 order 值，使其位于日志切面外层；同步 `OperateLogHandler` 可以检查
+  `TransactionSynchronizationManager.isActualTransactionActive()` 和 `isSynchronizationActive()` 后注册回调。
+  要覆盖全部事务结果，使用 `recordOn = ALWAYS` 并避免以 `success` 过滤记录。回调应使用已组装的记录；
+  若要写入数据库，使用独立事务（`REQUIRES_NEW`）。没有活动事务时单独处理。
 - traceId **只透传，不自造**：本组件从不写入或清理宿主 MDC。宿主未接入 Sleuth / Micrometer /
   OTel 等链路追踪体系、MDC 里没有对应 key 时，`traceId` 就是 `null`——本组件不会生成 UUID 充数，
   因为自造值不参与任何分布式追踪，字段名叫 `traceId` 却与真实链路无关，比留空更容易误导排查。

@@ -39,6 +39,8 @@ public class PayloadPolicy {
             "java.io.OutputStream",
             "java.io.Reader",
             "java.io.Writer",
+            "java.util.Iterator",
+            "java.util.stream.BaseStream",
             "[B"));
     private final int maxRequestLength;
     private final int maxResponseLength;

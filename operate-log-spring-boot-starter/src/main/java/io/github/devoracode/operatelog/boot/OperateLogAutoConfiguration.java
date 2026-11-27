@@ -170,6 +170,7 @@ public class OperateLogAutoConfiguration {
         /**
          * 日志侧共享 ObjectMapper：首次调用取宿主 bean 的防御性副本（保留宿主全部配置，补注册
          * {@link JavaTimeModule} 保证时间类型可序列化），宿主完全没有 mapper 时自建兜底实例。
+         * 日志 mapper 把嵌套的迭代器和流写为占位符，以免消耗业务对象。
          * 三个消费 bean 共享同一实例、{@code copy()} 只做一次；惰性取值把解析时点留在消费 bean 创建期。
          */
         private ObjectMapper safeTimeMapper() {
@@ -187,7 +188,7 @@ public class OperateLogAutoConfiguration {
                 mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
                 mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
             }
-            this.sharedSafeTimeMapper = mapper;
+            this.sharedSafeTimeMapper = mapper.registerModule(new SingleUseValueModule());
             return mapper;
         }
     }

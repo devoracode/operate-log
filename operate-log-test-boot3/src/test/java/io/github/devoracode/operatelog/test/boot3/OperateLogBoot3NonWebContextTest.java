@@ -23,9 +23,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static io.github.devoracode.operatelog.test.boot3.LogRecords.text;
 import static io.github.devoracode.operatelog.test.boot3.LogRecords.flag;
@@ -163,6 +167,41 @@ class OperateLogBoot3NonWebContextTest {
         assertTrue(stack.contains("\tat "));
     }
 
+    @Test
+    void logsIteratorWithoutAdvancingIt() {
+        Iterator<String> iterator = Arrays.asList("first", "second").iterator();
+
+        assertSame(iterator, this.context.getBean(ProtectedLogging.class).iterator(iterator));
+
+        Map<String, Object> record = lastRecord();
+        assertEquals("[\"<IGNORED:Iterator>\"]", text(record, "requestBody"));
+        assertEquals("\"<IGNORED:Iterator>\"", text(record, "responseBody"));
+        assertEquals("first", iterator.next());
+        assertEquals("second", iterator.next());
+    }
+
+    @Test
+    void logsDirectAndNestedStreamsWithoutConsumingOrClosingThem() {
+        AtomicInteger closes = new AtomicInteger();
+        ProtectedLogging service = this.context.getBean(ProtectedLogging.class);
+        try (Stream<String> stream = Stream.of("first", "second").onClose(closes::incrementAndGet)) {
+            assertSame(stream, service.stream(stream));
+            assertEquals("\"<IGNORED:BaseStream>\"", text(lastRecord(), "responseBody"));
+
+            Map<String, Object> wrapper = new LinkedHashMap<>();
+            wrapper.put("stream", stream);
+            assertSame(wrapper, service.wrapped(wrapper));
+
+            Map<String, Object> record = lastRecord();
+            assertEquals("[{\"stream\":\"<IGNORED:BaseStream>\"}]", text(record, "requestBody"));
+            assertEquals("{\"stream\":\"<IGNORED:BaseStream>\"}", text(record, "responseBody"));
+            assertEquals("<IGNORED:BaseStream>", text(child(child(record, "extra"), "wrapper"), "stream"));
+            assertEquals(0, closes.get());
+            assertEquals(Arrays.asList("first", "second"), stream.collect(Collectors.toList()));
+        }
+        assertEquals(1, closes.get());
+    }
+
     @TestConfiguration
     static class ProtectedLoggingConfiguration {
         @Bean
@@ -181,6 +220,22 @@ class OperateLogBoot3NonWebContextTest {
         @OperateLog(recordRequest = false)
         public void fail(RuntimeException failure) {
             throw failure;
+        }
+
+        @OperateLog(recordResponse = true)
+        public Iterator<String> iterator(Iterator<String> value) {
+            return value;
+        }
+
+        @OperateLog(recordResponse = true)
+        public Stream<String> stream(Stream<String> value) {
+            return value;
+        }
+
+        @OperateLog(recordResponse = true)
+        public Map<String, Object> wrapped(Map<String, Object> wrapper) {
+            OperateLogContextHolder.putExtra("wrapper", wrapper);
+            return wrapper;
         }
     }
 

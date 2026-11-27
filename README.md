@@ -224,9 +224,9 @@ operate-log:
     max-response-length: 0        # responseBody 最大字符数，<=0 不截断
     max-error-length: 0           # errorStack / errorMessage 最大字符数，<=0 不截断
     max-extra-length: 0           # extra 整体 JSON 最大字符数，<=0 不截断（超限按实际 JSON 长度缩减）
-    # ignore-types:               # 在内置 17 项安全基线之外追加的忽略类型
+    # ignore-types:               # 在内置安全基线之外追加的忽略类型
     #   - java.util.concurrent.Callable
-    # 注意：配置项会在内置 17 项安全基线之外【追加】，不会移除 Servlet、安全上下文、流、字节数组等默认防护。
+    # 注意：配置项只追加类型，内置的 Servlet、安全上下文、迭代器、流、字节数组等防护保留。
 ```
 
 | 配置项 | 默认值 | 说明 |
@@ -245,9 +245,9 @@ operate-log:
 | `operate-log.payload.max-response-length` | `0` | `responseBody` 最大字符数，`<=0` 不截断；标记同上计入上限 |
 | `operate-log.payload.max-error-length` | `0` | `errorStack` / `errorMessage` 最大字符数，`<=0` 不截断 |
 | `operate-log.payload.max-extra-length` | `0` | `extra` 整体 JSON 的最大字符数，`<=0` 不截断（与其他三项载荷上限一致）；超限时按单条实际 JSON 长度缩减：`String` 二分截短并保留 `...[truncated]` 标记，非 `String` 按实际大小移除，保留项类型不变；最终结果严格不超过上限 |
-| `operate-log.payload.ignore-types` | 17 项内置 | 在内置安全类型之外**追加**序列化时跳过的类型（全限定类名，父类/接口命中即算），入参与返回值两侧都生效，替换为 `<IGNORED:类型简名>`；内置类型始终生效，无法通过配置移除，如需不同集合请注册自定义 `PayloadPolicy` bean。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
+| `operate-log.payload.ignore-types` | 19 项内置 | 在内置安全类型之外**追加**序列化时跳过的类型（全限定类名，父类/接口命中即算），入参与返回值两侧都生效，替换为 `<IGNORED:类型简名>`；内置集合包含 `Iterator` 和 `BaseStream`，无法通过配置移除，如需不同集合请注册自定义 `PayloadPolicy` bean。字节数组的 JVM 内部名为 `[B`，YAML 里须写成 `- "[B"`（不加引号会被当成流式序列而解析失败） |
 
-> **升级提示**：`payload.ignore-types` 已从“整体替换”改为“追加”，内置 17 项安全防护无法再通过配置移除；必须自定义完整集合时，请改注册 `PayloadPolicy` bean。
+> **升级提示**：`payload.ignore-types` 已从“整体替换”改为“追加”，内置安全防护无法再通过配置移除；必须自定义完整集合时，请改注册 `PayloadPolicy` bean。
 >
 > **脱敏默认值变更**：`operate-log.mask.enabled` 由 `true` 改为 `false`。宿主若没有自己的脱敏方案，**升级后 `password` / `token` / `authorization` 等内置默认字段会以原值进日志**，请显式配置 `operate-log.mask.enabled: true` 保持原行为。
 
@@ -321,6 +321,8 @@ Filter → DispatcherServlet → Interceptor#preHandle
 | `SensitiveDataMasker` | `DefaultSensitiveDataMasker`（方法入参、JSON、查询串、异常文本） | 定制脱敏规则（如手机号部分掩码 `138****1234`） |
 | `SpelEngine` | `DefaultSpelEngine`（每次调用重新解析表达式；`new DefaultSpelEngine(false)` 可整体直通） | 定制表达式引擎（如增加自定义函数） |
 | `PayloadPolicy` | 按 `operate-log.payload.*` 组装 | 定制载荷防护（自定义截断 / 忽略类型逻辑，注册 Bean 即覆盖） |
+
+Starter 的默认日志序列化器和 Handler 也会把嵌套的 `Iterator`、`BaseStream` 写为占位符，避免读取或关闭业务对象。自定义序列化器或 Handler 时，请对这些对象记录摘要或占位符。
 
 ### 示例：业务自定义字段（extra）
 

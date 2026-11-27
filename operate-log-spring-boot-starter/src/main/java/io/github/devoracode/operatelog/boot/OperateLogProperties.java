@@ -87,7 +87,7 @@ public class OperateLogProperties {
 
         /**
          * 在内置类型之外追加的忽略类型（全限定类名，命中父类或任意接口即算），日志中占位为
-         * {@code <IGNORED:类型简名>}。内置 17 项始终生效，配置无法移除。
+         * {@code <IGNORED:类型简名>}。内置 19 项始终生效，配置无法移除。
          * 字节数组的 JVM 内部名 {@code [B} 在 YAML 中须加引号写成 {@code - "[B"}，否则解析为流式序列而失败。
          */
         private List<String> ignoreTypes = new ArrayList<>();

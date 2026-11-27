@@ -60,8 +60,9 @@ Boot 2.x 与 3.x 使用同一坐标（Starter 本体为 Java 8 字节码；Boot 
 ```
 
 > 日志 JSON 复用宿主 `ObjectMapper`（Boot Web 默认已有）。**Starter 不注册任何 `ObjectMapper` bean**：自动配置按类名排序时本组件排在 Boot 的 `JacksonAutoConfiguration` 之前，一旦注册就会顶掉宿主的 `spring.jackson.*` 与自定义 `Module`，波及宿主自身的 MVC 序列化；日志侧只取宿主 mapper 的防御性副本。
-> **注意**：该副本会补注册 `JavaTimeModule`，因此非 Web 宿主即使提供了未注册 jsr310 的自定义 `ObjectMapper`，日志���列化也不会失败；宿主完全没有 `ObjectMapper` bean 时（非 Web 且未装配 Jackson）才内部自建兜底实例，仍不污染容器。
-> 非 Web 环境（定时任务、后台服务）也能工作：HTTP 相关字段自动降级为 `null`。
+> 日志侧副本会补注册 `JavaTimeModule`。没有 `ObjectMapper` Bean 时使用日志专用 Mapper；多个候选且无法选定时也使用专用 Mapper，并记录一条告警。若希望沿用某个候选的配置，可将它设为 `@Primary`。
+>
+> **非 Web 应用**可同时引入 `spring-boot-starter-aop` 和 `spring-boot-starter-json`。HTTP 字段为 `null`；缺少 Jackson 2 的 `jackson-databind` 或 `jackson-datatype-jsr310` 时，Starter 跳过自动配置，宿主仍可启动。可开启 Boot 的 `debug` 查看条件报告。
 
 ### 2. 标注注解
 

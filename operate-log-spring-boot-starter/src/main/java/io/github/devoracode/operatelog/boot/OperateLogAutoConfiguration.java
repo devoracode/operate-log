@@ -23,6 +23,8 @@ import io.github.devoracode.operatelog.serializer.DefaultOperateLogSerializer;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import io.github.devoracode.operatelog.spel.DefaultSpelEngine;
 import io.github.devoracode.operatelog.spel.SpelEngine;
+import lombok.extern.apachecommons.CommonsLog;
+import org.springframework.beans.factory.NoUniqueBeanDefinitionException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -46,10 +48,12 @@ import org.springframework.context.annotation.Configuration;
  * <p>边界纪律：本配置<b>不注册</b> {@link ObjectMapper} bean。自动配置按类名排序，
  * 本类（{@code io.github...}）排在 Boot 的 {@code JacksonAutoConfiguration}（{@code org.springframework.boot...}）
  * 之前，一旦注册就会顶掉宿主的 {@code spring.jackson.*} 与自定义 Module，波及宿主自身的
- * MVC 序列化。日志侧只取宿主 mapper 的防御性副本，宿主完全没有时才自建兜底实例。</p>
+ * MVC 序列化。日志侧只取宿主 mapper 的防御性副本，没有可唯一选择的候选时自建兜底实例。</p>
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(OperateLogProperties.class)
+@ConditionalOnClass(name = {"com.fasterxml.jackson.databind.ObjectMapper",
+        "com.fasterxml.jackson.datatype.jsr310.JavaTimeModule"})
 @ConditionalOnProperty(prefix = "operate-log", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class OperateLogAutoConfiguration {
     /**
@@ -58,6 +62,7 @@ public class OperateLogAutoConfiguration {
      * 实现由下面三个栈配置之一提供。
      */
     @Configuration(proxyBeanMethods = false)
+    @CommonsLog
     static class CommonConfiguration {
         // 注解缓存按目标类关联，只作热路径优化；单类缓存超限后重新解析，不影响业务结果。
         private static final int ANNOTATION_CACHE_SIZE = 4096;
@@ -169,7 +174,7 @@ public class OperateLogAutoConfiguration {
 
         /**
          * 日志侧共享 ObjectMapper：首次调用取宿主 bean 的防御性副本（保留宿主全部配置，补注册
-         * {@link JavaTimeModule} 保证时间类型可序列化），宿主完全没有 mapper 时自建兜底实例。
+         * {@link JavaTimeModule} 保证时间类型可序列化），无法选定宿主 mapper 时自建兜底实例。
          * 日志 mapper 把嵌套的迭代器和流写为占位符，以免消耗业务对象。
          * 三个消费 bean 共享同一实例、{@code copy()} 只做一次；惰性取值把解析时点留在消费 bean 创建期。
          */
@@ -178,7 +183,13 @@ public class OperateLogAutoConfiguration {
             if (cached != null) {
                 return cached;
             }
-            ObjectMapper hostMapper = this.objectMapperProvider.getIfAvailable();
+            ObjectMapper hostMapper = null;
+            try {
+                hostMapper = this.objectMapperProvider.getIfAvailable();
+            } catch (NoUniqueBeanDefinitionException ex) {
+                log.warn("operate-log: multiple ObjectMapper beans are eligible; using a private mapper. "
+                        + "Mark the intended host mapper as @Primary to reuse its configuration.");
+            }
             ObjectMapper mapper;
             if (hostMapper != null) {
                 mapper = hostMapper.copy().registerModule(new JavaTimeModule());

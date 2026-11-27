@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 解析器写 {@code extra}：操作人角色这类扩展属性由宿主在 {@code OperatorResolver} 内追加，
@@ -98,12 +99,15 @@ class OperateLogBoot3OperatorExtraTest {
     @Test
     void resolverFailureWritesNoPartialAttributes() throws Exception {
         ChaosFlags.enable(ChaosFlags.OPERATOR_EXTRA, ChaosFlags.OPERATOR);
-        this.mockMvc.perform(get("/demo/42"));
+        this.mockMvc.perform(get("/demo/42")).andExpect(status().isOk());
 
         Map<String, Object> record = lastRecord();
         assertTrue(flag(record, "success"), "解析器故障不得影响业务");
         assertNull(record.get("operatorUserId"), "operator 应降级为 null: " + record);
-        assertNull(child(record, "extra").get("roleCode"), "故障前不得留下半写属性: " + record.get("extra"));
+        Map<String, Object> extra = child(record, "extra");
+        assertEquals("extra-channel", text(extra, "demo"));
+        assertEquals("42", text(extra, "userId"));
+        assertEquals(2, extra.size(), "extra 只应保留业务侧键: " + extra);
     }
 
     private Map<String, Object> lastRecord() {

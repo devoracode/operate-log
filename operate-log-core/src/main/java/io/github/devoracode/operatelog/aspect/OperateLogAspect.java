@@ -150,7 +150,7 @@ public class OperateLogAspect {
         // 绑定线程上下文后再跑解析器：Resolver 与业务方法都能用 OperateLogContextHolder#putExtra 追加字段
         OperateLogContext previous = OperateLogContextHolder.current();
         OperateLogContextHolder.bind(context);
-        context.setOperator(resolveOperator());
+        context.setOperator(resolveOperator(context));
         context.setHttp(resolveHttpContext());
         try {
             Object result = joinPoint.proceed();
@@ -278,10 +278,12 @@ public class OperateLogAspect {
         }
     }
 
-    private Operator resolveOperator() {
+    private Operator resolveOperator(OperateLogContext context) {
         try {
             return this.operatorResolver.resolve();
         } catch (Throwable ex) {
+            // 此时 HTTP 解析器和业务方法尚未执行，新上下文只含本次操作人解析器的写入。
+            context.getExtra().clear();
             log.warn("operate-log: operator resolution failed, degraded to null (exceptionType={}).",
                     ex.getClass().getName());
             return null;

@@ -13,12 +13,12 @@ public class TestOperatorResolver implements OperatorResolver {
 
     @Override
     public Operator resolve() {
-        ChaosFlags.throwIfActive(ChaosFlags.OPERATOR, "chaos: operator resolver down");
         if (ChaosFlags.isActive(ChaosFlags.OPERATOR_EXTRA)) {
             OperateLogContextHolder.putExtra("roleId", "20001");
             OperateLogContextHolder.putExtra("roleCode", "ADMIN");
             OperateLogContextHolder.putExtra("roleName", "超级管理员");
         }
+        ChaosFlags.throwIfActive(ChaosFlags.OPERATOR, "chaos: operator resolver down");
         return Operator.builder()
                 .userId("10001")
                 .userAccount("demo")

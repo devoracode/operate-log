@@ -40,6 +40,9 @@ public class OperateLogProperties {
     /** 载荷防护配置。 */
     private Payload payload = new Payload();
 
+    public OperateLogProperties() {
+    }
+
     @Data
     public static class Http {
 
@@ -48,6 +51,9 @@ public class OperateLogProperties {
 
         /** 是否采集完整请求头（脱敏后写入 requestHeaders）。 */
         private boolean captureHeaders;
+
+        public Http() {
+        }
     }
 
     @Data
@@ -68,6 +74,9 @@ public class OperateLogProperties {
          * 内置 16 项取并集生效：默认字段始终脱敏，配置无法移除。
          */
         private Set<String> fields = new LinkedHashSet<>();
+
+        public Mask() {
+        }
     }
 
     @Data
@@ -91,5 +100,8 @@ public class OperateLogProperties {
          * 字节数组的 JVM 内部名 {@code [B} 在 YAML 中须加引号写成 {@code - "[B"}，否则解析为流式序列而失败。
          */
         private List<String> ignoreTypes = new ArrayList<>();
+
+        public Payload() {
+        }
     }
 }

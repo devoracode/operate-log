@@ -4,7 +4,6 @@ import io.github.devoracode.operatelog.annotation.OperateLog;
 import io.github.devoracode.operatelog.model.HttpContext;
 import io.github.devoracode.operatelog.model.Operator;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import lombok.Setter;
 import org.aspectj.lang.ProceedingJoinPoint;
 
@@ -16,7 +15,6 @@ import java.util.Map;
 /** 操作日志执行上下文：单次方法调用的全部中间状态，供 SpEL 求值与记录组装使用。 */
 @Getter
 @Setter
-@RequiredArgsConstructor
 public class OperateLogContext {
     private final OperateLog annotation;
     private final ProceedingJoinPoint joinPoint;
@@ -33,6 +31,18 @@ public class OperateLogContext {
     private Instant startTime;
     private Instant endTime;
     private final Map<String, Object> extra = new LinkedHashMap<>();
+
+    public OperateLogContext(OperateLog annotation,
+                             ProceedingJoinPoint joinPoint,
+                             Method method,
+                             Object target,
+                             Object[] arguments) {
+        this.annotation = annotation;
+        this.joinPoint = joinPoint;
+        this.method = method;
+        this.target = target;
+        this.arguments = arguments;
+    }
 
     public boolean hasError() {
         return this.error != null;

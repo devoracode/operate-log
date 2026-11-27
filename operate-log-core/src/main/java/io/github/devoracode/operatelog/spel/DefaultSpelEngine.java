@@ -1,9 +1,8 @@
 package io.github.devoracode.operatelog.spel;
 
 import io.github.devoracode.operatelog.context.OperateLogContext;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
@@ -35,8 +34,8 @@ import java.util.regex.Pattern;
  * （{@code @OperateLog} 的属性值），它由代码结构保证，而非沙箱。运行时动态注入的表达式仍受上述
  * 边界限制，但不具备这层保证。</p>
  */
+@Slf4j
 public class DefaultSpelEngine implements SpelEngine {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSpelEngine.class);
     /**
      * 解析不到参数名时的空数组哨兵，避免后续遍历判空。
      */
@@ -119,7 +118,7 @@ public class DefaultSpelEngine implements SpelEngine {
     }
 
     private void logDegraded(String operation, Throwable ex) {
-        LOGGER.debug("operate-log: SpEL '{}' failed, degraded (exceptionType={}).",
+        log.debug("operate-log: SpEL '{}' failed, degraded (exceptionType={}).",
                 operation, ex.getClass().getName());
     }
 

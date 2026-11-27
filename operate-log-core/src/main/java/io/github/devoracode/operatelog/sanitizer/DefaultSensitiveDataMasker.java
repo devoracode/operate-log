@@ -6,9 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Method;
@@ -38,8 +37,8 @@ import java.util.regex.Pattern;
  * <p>同时覆写 {@link #maskQuery(String)}：对 URL query string 按参数名匹配并替换敏感值，
  * 复用同一份敏感字段集合与替换文本。</p>
  */
+@Slf4j
 public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultSensitiveDataMasker.class);
     static final String DEFAULT_MASK_TEXT = "******";
     private static final String INVALID_PAYLOAD = "<MASKED>";
     private static final String UNSERIALIZABLE = "<UNSERIALIZABLE>";
@@ -95,7 +94,7 @@ public class DefaultSensitiveDataMasker implements SensitiveDataMasker {
             }
             return this.objectMapper.writeValueAsString(root);
         } catch (Exception | StackOverflowError ex) {
-            LOGGER.debug("operate-log: JSON payload replaced after masking failure (exceptionType={}).",
+            log.debug("operate-log: JSON payload replaced after masking failure (exceptionType={}).",
                     ex.getClass().getName());
             return INVALID_PAYLOAD;
         }

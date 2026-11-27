@@ -13,13 +13,14 @@ import io.github.devoracode.operatelog.resolver.OperatorResolver;
 import io.github.devoracode.operatelog.sanitizer.SensitiveDataMasker;
 import io.github.devoracode.operatelog.serializer.OperateLogSerializer;
 import io.github.devoracode.operatelog.spel.SpelEngine;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.core.annotation.AnnotationUtils;
@@ -52,8 +53,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Aspect
 @Order
+@Slf4j
 public class OperateLogAspect {
-    private static final Logger LOGGER = LoggerFactory.getLogger(OperateLogAspect.class);
     private static final String DEFAULT_TRACE_ID_MDC_KEY = "traceId";
     private static final String UNSERIALIZABLE_SENTINEL = "<UNSERIALIZABLE>";
     private static final String TRUNCATED_SUFFIX = "...[truncated]";
@@ -125,7 +126,7 @@ public class OperateLogAspect {
             targetMethod = AopUtils.getMostSpecificMethod(invocationMethod, targetClass);
             annotation = findOperateLogCached(invocationMethod, targetMethod, targetClass);
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: annotation lookup failed, logging skipped (exceptionType={}).",
+            log.warn("operate-log: annotation lookup failed, logging skipped (exceptionType={}).",
                     ex.getClass().getName());
             return joinPoint.proceed();
         }
@@ -142,7 +143,7 @@ public class OperateLogAspect {
             context.setStartTime(Instant.now());
             context.setTraceId(resolveTraceId());
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: context initialization failed, logging skipped (exceptionType={}).",
+            log.warn("operate-log: context initialization failed, logging skipped (exceptionType={}).",
                     ex.getClass().getName());
             return joinPoint.proceed();
         }
@@ -177,7 +178,7 @@ public class OperateLogAspect {
                     .toMillis());
             handleSafely(context);
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: log finalization failed, this record may be lost (exceptionType={}).",
+            log.warn("operate-log: log finalization failed, this record may be lost (exceptionType={}).",
                     ex.getClass().getName());
         }
     }
@@ -271,7 +272,7 @@ public class OperateLogAspect {
             String existing = MDC.get(mdcKey);
             return StringUtils.isNotBlank(existing) ? existing : null;
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: traceId read failed, degraded to null (exceptionType={}).",
+            log.warn("operate-log: traceId read failed, degraded to null (exceptionType={}).",
                     ex.getClass().getName());
             return null;
         }
@@ -281,7 +282,7 @@ public class OperateLogAspect {
         try {
             return this.operatorResolver.resolve();
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: operator resolution failed, degraded to null (exceptionType={}).",
+            log.warn("operate-log: operator resolution failed, degraded to null (exceptionType={}).",
                     ex.getClass().getName());
             return null;
         }
@@ -291,7 +292,7 @@ public class OperateLogAspect {
         try {
             return this.httpContextResolver.resolve();
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: http context resolution failed, degraded to null (exceptionType={}).",
+            log.warn("operate-log: http context resolution failed, degraded to null (exceptionType={}).",
                     ex.getClass().getName());
             return null;
         }
@@ -309,7 +310,7 @@ public class OperateLogAspect {
             OperateLogRecord record = buildRecord(context);
             this.handler.handle(record);
         } catch (Throwable ex) {
-            LOGGER.warn("operate-log: failed to build/handle log record for module=[{}], "
+            log.warn("operate-log: failed to build/handle log record for module=[{}], "
                             + "operation=[{}] (exceptionType={}).",
                     context.getAnnotation().module(),
                     context.getAnnotation().operation(),
@@ -535,7 +536,7 @@ public class OperateLogAspect {
     private void dropExtra(Map<String, Object> extra, String reason) {
         int droppedKeys = extra.size();
         extra.clear();
-        LOGGER.warn("operate-log: extra dropped entirely because {}; {} key(s) lost.",
+        log.warn("operate-log: extra dropped entirely because {}; {} key(s) lost.",
                 reason, droppedKeys);
     }
 
@@ -595,6 +596,7 @@ public class OperateLogAspect {
 
     private static final class LimitedStringWriter extends StringWriter {
         private final int limit;
+        @Getter(AccessLevel.PRIVATE)
         private boolean truncated;
 
         private LimitedStringWriter(int limit) {
@@ -640,10 +642,6 @@ public class OperateLogAspect {
             if (len > remaining) {
                 this.truncated = true;
             }
-        }
-
-        private boolean isTruncated() {
-            return this.truncated;
         }
     }
 }

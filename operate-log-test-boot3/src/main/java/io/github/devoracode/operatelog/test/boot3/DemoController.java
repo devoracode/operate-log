@@ -4,6 +4,7 @@ import io.github.devoracode.operatelog.annotation.OperateLog;
 import io.github.devoracode.operatelog.context.OperateLogContextHolder;
 import io.github.devoracode.operatelog.model.OperateType;
 import io.github.devoracode.operatelog.model.RecordOn;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,12 +24,9 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/demo")
+@RequiredArgsConstructor
 public class DemoController {
     private final DemoNestedService nestedService;
-
-    public DemoController(DemoNestedService nestedService) {
-        this.nestedService = nestedService;
-    }
 
     /** 基础路径：SpEL 模板混排字面量、{@code businessId} 按参数名取值、{@code extra} 通道、只记请求不记响应。 */
     @OperateLog(

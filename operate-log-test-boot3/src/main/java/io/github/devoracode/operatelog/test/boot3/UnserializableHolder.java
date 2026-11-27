@@ -1,6 +1,8 @@
 package io.github.devoracode.operatelog.test.boot3;
 
-import java.util.LinkedHashMap;
+import lombok.Getter;
+import lombok.Setter;
+
 import java.util.Map;
 
 /**
@@ -9,15 +11,9 @@ import java.util.Map;
  * 业务方法不受影响。
  */
 public class UnserializableHolder {
+    @Getter
+    @Setter
     private String note = "ignored";
-
-    public String getNote() {
-        return this.note;
-    }
-
-    public void setNote(String note) {
-        this.note = note;
-    }
 
     /** 任何序列化尝试都会走到这里抛异常。 */
     public Map<String, Object> getBoom() {
